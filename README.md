@@ -1,14 +1,5 @@
 # M1 — Versioned Evidence Corpus
 
-This is the next build phase after Assignment 1 (the proposal). Assignment 1
-only committed to *what* the tutor must do (M1–M8); nothing was implemented
-yet. Milestones are dependency-ordered — M2 (hybrid retrieval) needs a
-corpus to retrieve from, M3 (citations) needs timestamps to cite, M4
-(multimodal evidence) needs OCR'd keyframes to return — so **M1 is the
-correct next task**: it's the foundation everything else sits on.
-
-## What "done" means for M1, per the spec
-
 > Text, transcript, slide/image/code evidence and timestamp metadata are
 > indexed while preserving source and content-version identifiers.
 
