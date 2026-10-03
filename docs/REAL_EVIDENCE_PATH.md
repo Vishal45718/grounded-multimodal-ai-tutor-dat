@@ -29,8 +29,10 @@ python scripts/ingest_official.py ingest --asset-id cs50-2024-lec01-video
 The produced evidence chunks are stored in the main SQLite database (`data/corpus.db`) under the `chunks` table. They preserve:
 - `source_id`: `cs50-lec01`
 - `asset_id`: `cs50-2024-lec01-video`
-- `content_hash`: deterministic hash generated from the asset
-- `timestamp_start` and `timestamp_end` bounds
+- `content_hash`: deterministic SHA-256 hash of the downloaded input bytes (the exact `.srt` and `.pdf` files).
+- `timestamp_start` and `timestamp_end` bounds:
+  - For audio (SRT) chunks: real timing data directly from the official transcript.
+  - For visual (PDF) chunks: marked as `Unknown` (`null`) since trustworthy slide-to-video alignment is not currently available. We explicitly avoid hallucinating synthetic timestamps like `10.0s`.
 - `modality` (`audio` or `visual`)
 
 ## 5. One Real Evidence Record
@@ -80,6 +82,7 @@ The evaluator can copy the `Video Nav` link (`https://cs50.harvard.edu/x/2024/we
 
 ## Verification
 - We verified that the ingestion script downloads the SRT and PDF.
-- The timestamps reflect the exact timestamps in the official captions.
-- The citation resolves back to a web URL matching the `source_url` specified in the manifest, appended with the `start_sec` parameter.
+- The **content hash** is generated directly by hashing the actual `.srt` and `.pdf` files downloaded from the official sources, rather than a hardcoded placeholder.
+- **Audio timestamps** reflect the exact timestamps in the official captions.
+- **Visual timestamps** are correctly recorded as `Unknown` since no accurate source mapping exists. The citation resolver accurately reports this and does not append fake `&t=` tags to the URLs.
 - The actual ingestion was executed and validated locally. Full multimodal answering and retrieval pipeline is not yet complete.

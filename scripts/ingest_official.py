@@ -8,9 +8,10 @@ from typing import List
 from ingestion.manifest import get_manifest_asset, get_manifest_source
 from ingestion.transcriber import parse_srt, TranscriptSegment
 from ingestion.chunker import build_chunks
-from ingestion.versioning import SourceVersion
+from ingestion.versioning import SourceVersion, file_content_hash
 from storage.corpus_store import init_db, insert_chunks, upsert_source, is_source_active
 from ingestion.ocr import OcrResult
+import hashlib
 from config import CONFIG
 
 def resolve_citation(chunk_id: str):
@@ -27,9 +28,13 @@ def resolve_citation(chunk_id: str):
         print("\n--- RESOLVED CITATION ---")
         print(f"Source ID:   {chunk['source_id']}")
         print(f"Modality:    {chunk['modality']}")
-        print(f"Time Bounds: {chunk['start_sec']}s - {chunk['end_sec']}s")
+        if chunk['start_sec'] is not None and chunk['end_sec'] is not None:
+            print(f"Time Bounds: {chunk['start_sec']}s - {chunk['end_sec']}s")
+        else:
+            print(f"Time Bounds: Unknown")
         print(f"Content:     {chunk['text']}")
-        print(f"Video Nav:   {chunk['source_url']}&t={int(chunk['start_sec'])}s")
+        if chunk['start_sec'] is not None:
+            print(f"Video Nav:   {chunk['source_url']}&t={int(chunk['start_sec'])}s")
         if chunk['image_path']:
             print(f"Visual Nav:  {chunk['image_path']}")
         print("-------------------------\n")
@@ -48,7 +53,6 @@ def ingest_official(args):
     course_edition = manifest_record.edition_id
     asset_id = manifest_record.asset_id
     source_url = manifest_record.source_url
-    content_hash = f"official_{asset_id}"
     
     with tempfile.TemporaryDirectory() as tmpdir:
         srt_path = os.path.join(tmpdir, "subs.srt")
@@ -68,11 +72,17 @@ def ingest_official(args):
             
             # Simple pseudo-extraction
             ocr_results.append(OcrResult(
-                timestamp_sec=0.0,
+                timestamp_sec=None,
                 image_path=pdf_path,
                 text="Official slide content extracted from PDF",
                 status="success"
             ))
+
+        # Generate deterministic content_hash from downloaded inputs
+        hash_parts = [file_content_hash(srt_path)]
+        if manifest_record.slides_url:
+            hash_parts.append(file_content_hash(pdf_path))
+        content_hash = hashlib.sha256("".join(hash_parts).encode("utf-8")).hexdigest()[:16]
 
         print(f"Building chunks...")
         chunks = build_chunks(

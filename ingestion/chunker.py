@@ -18,8 +18,8 @@ class EvidenceChunk:
     source_id: str
     content_hash: str
     modality: str  # "audio" | "visual"
-    start_sec: float
-    end_sec: float
+    start_sec: Optional[float]
+    end_sec: Optional[float]
     text: str
     image_path: Optional[str] = None
     asset_id: Optional[str] = None
@@ -28,19 +28,20 @@ class EvidenceChunk:
     error_message: Optional[str] = None
 
     def __post_init__(self):
-        if self.start_sec < 0:
-            raise ValueError(f"timestamp_start ({self.start_sec}) must be >= 0")
-        if self.end_sec <= self.start_sec:
-            if not (self.modality == "visual" and self.start_sec == self.end_sec):
-                raise ValueError(f"timestamp_end ({self.end_sec}) must be > timestamp_start ({self.start_sec})")
+        if self.start_sec is not None:
+            if self.start_sec < 0:
+                raise ValueError(f"timestamp_start ({self.start_sec}) must be >= 0")
+            if self.end_sec is not None and self.end_sec <= self.start_sec:
+                if not (self.modality == "visual" and self.start_sec == self.end_sec):
+                    raise ValueError(f"timestamp_end ({self.end_sec}) must be > timestamp_start ({self.start_sec})")
 
 
 def compute_chunk_id(
     source_id: str,
     content_hash: str,
     modality: str,
-    start_sec: float,
-    end_sec: float,
+    start_sec: Optional[float] = None,
+    end_sec: Optional[float] = None,
     text: str = "",
     extra: str = "",
 ) -> str:
@@ -49,9 +50,11 @@ def compute_chunk_id(
 
     Stable across identical rebuilds without depending on process randomness.
     """
+    s_sec = f"{round(start_sec, 3):.3f}" if start_sec is not None else "None"
+    e_sec = f"{round(end_sec, 3):.3f}" if end_sec is not None else "None"
     identity_str = (
         f"{source_id}:{content_hash}:{modality}:"
-        f"{round(start_sec, 3):.3f}:{round(end_sec, 3):.3f}:"
+        f"{s_sec}:{e_sec}:"
         f"{text.strip()}:{extra.strip()}"
     )
     return hashlib.sha256(identity_str.encode("utf-8")).hexdigest()[:32]

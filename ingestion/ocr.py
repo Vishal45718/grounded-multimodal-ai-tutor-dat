@@ -11,7 +11,7 @@ from ingestion.video_processor import Keyframe
 
 @dataclass
 class OcrResult:
-    timestamp_sec: float
+    timestamp_sec: Optional[float]
     image_path: str
     text: str
     status: str = "success"

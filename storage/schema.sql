@@ -17,8 +17,8 @@ CREATE TABLE IF NOT EXISTS chunks (
     source_id       TEXT NOT NULL REFERENCES sources(source_id),
     content_hash    TEXT NOT NULL,
     modality        TEXT NOT NULL CHECK (modality IN ('audio', 'visual')),
-    start_sec       REAL NOT NULL,
-    end_sec         REAL NOT NULL,
+    start_sec       REAL,
+    end_sec         REAL,
     text            TEXT NOT NULL,
     image_path      TEXT,
     -- denormalized for M6: a chunk from an edited or deprecated source must

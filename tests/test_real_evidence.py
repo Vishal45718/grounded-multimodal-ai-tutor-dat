@@ -100,3 +100,91 @@ def test_repeated_ingestion_preserves_deterministic_identity():
     assert len(chunks1) == 1
     assert len(chunks2) == 1
     assert chunks1[0].chunk_id == chunks2[0].chunk_id
+
+def test_content_hash_is_deterministic(tmp_path):
+    from ingestion.versioning import file_content_hash
+    import hashlib
+    file1 = tmp_path / "test1.txt"
+    file1.write_text("dummy content")
+    
+    hash1 = file_content_hash(str(file1))
+    hash2 = file_content_hash(str(file1))
+    
+    assert hash1 == hash2
+    assert hash1 == hashlib.sha256(b"dummy content").hexdigest()[:16]
+
+def test_content_hash_changes_when_input_changes(tmp_path):
+    from ingestion.versioning import file_content_hash
+    file1 = tmp_path / "test1.txt"
+    file1.write_text("dummy content 1")
+    
+    file2 = tmp_path / "test2.txt"
+    file2.write_text("dummy content 2")
+    
+    hash1 = file_content_hash(str(file1))
+    hash2 = file_content_hash(str(file2))
+    
+    assert hash1 != hash2
+
+def test_srt_evidence_uses_real_timestamps():
+    transcript = [TranscriptSegment(start_sec=10.5, end_sec=20.5, text="Hello world")]
+    chunks = build_chunks(
+        source_id="cs50-lec01",
+        content_hash="testhash",
+        transcript=transcript,
+        ocr_results=[],
+        asset_id="cs50-2024-lec01-video",
+    )
+    assert len(chunks) == 1
+    assert chunks[0].start_sec == 10.5
+    assert chunks[0].end_sec == 20.5
+
+def test_visual_evidence_does_not_use_synthetic_video_timestamp():
+    from ingestion.ocr import OcrResult
+    ocr_results = [OcrResult(timestamp_sec=None, image_path="slides.pdf", text="Slide 1")]
+    chunks = build_chunks(
+        source_id="cs50-lec01",
+        content_hash="testhash",
+        transcript=[],
+        ocr_results=ocr_results,
+        asset_id="cs50-2024-lec01-video",
+    )
+    assert len(chunks) == 1
+    assert chunks[0].start_sec is None
+    assert chunks[0].end_sec is None
+
+def test_visual_citation_does_not_create_fake_timestamp(capsys):
+    init_db()
+    from ingestion.ocr import OcrResult
+    ocr_results = [OcrResult(timestamp_sec=None, image_path="slides.pdf", text="Slide 1")]
+    chunks = build_chunks(
+        source_id="cs50-lec01",
+        content_hash="testhash",
+        transcript=[],
+        ocr_results=ocr_results,
+        asset_id="cs50-2024-lec01-video",
+        source_url="https://test.url"
+    )
+    insert_chunks(chunks)
+    resolve_citation(chunks[0].chunk_id)
+    captured = capsys.readouterr()
+    assert "Time Bounds: Unknown" in captured.out
+    assert "Video Nav: " not in captured.out
+    assert "Visual Nav:  slides.pdf" in captured.out
+
+def test_audio_citation_remains_navigable(capsys):
+    init_db()
+    transcript = [TranscriptSegment(start_sec=10.0, end_sec=20.0, text="Hello world")]
+    chunks = build_chunks(
+        source_id="cs50-lec01",
+        content_hash="testhash",
+        transcript=transcript,
+        ocr_results=[],
+        asset_id="cs50-2024-lec01-video",
+        source_url="https://test.url"
+    )
+    insert_chunks(chunks)
+    resolve_citation(chunks[0].chunk_id)
+    captured = capsys.readouterr()
+    assert "Time Bounds: 10.0s - 20.0s" in captured.out
+    assert "Video Nav:   https://test.url&t=10s" in captured.out
