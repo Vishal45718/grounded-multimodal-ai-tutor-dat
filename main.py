@@ -97,7 +97,8 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_ingest = sub.add_parser("ingest", help="Ingest one lecture video")
-    p_ingest.add_argument("--video", required=True)
+    p_ingest.add_argument("--video", required=False, help="Local video file path")
+    p_ingest.add_argument("--use-official", action="store_true", help="Download and use official transcript/slides from manifest instead of ASR/OCR")
     p_ingest.add_argument("--source-id", default=None, help="stable logical id, e.g. cs50-lec00")
     p_ingest.add_argument("--title", default=None)
     p_ingest.add_argument("--course-edition", default=None)
@@ -108,6 +109,10 @@ def main():
     p_dep = sub.add_parser("deprecate", help="Deprecate a whole course edition")
     p_dep.add_argument("--course-edition", required=True)
     p_dep.set_defaults(func=deprecate)
+
+    p_resolve = sub.add_parser("resolve-citation", help="Resolve an evidence chunk ID to an actionable citation")
+    p_resolve.add_argument("--chunk-id", required=True)
+    p_resolve.set_defaults(func=resolve_citation)
 
     args = parser.parse_args()
     args.func(args)

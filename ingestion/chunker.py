@@ -27,6 +27,13 @@ class EvidenceChunk:
     status: str = "success"
     error_message: Optional[str] = None
 
+    def __post_init__(self):
+        if self.start_sec < 0:
+            raise ValueError(f"timestamp_start ({self.start_sec}) must be >= 0")
+        if self.end_sec <= self.start_sec:
+            if not (self.modality == "visual" and self.start_sec == self.end_sec):
+                raise ValueError(f"timestamp_end ({self.end_sec}) must be > timestamp_start ({self.start_sec})")
+
 
 def compute_chunk_id(
     source_id: str,
