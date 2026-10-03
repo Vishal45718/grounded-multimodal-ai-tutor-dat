@@ -25,7 +25,8 @@ video file
 ```
 
 - **`ingestion/video_processor.py`** — ffmpeg-based audio extraction and
-  keyframe extraction. Keyframes are picked by scene-change detection
+  keyframe extraction with version-isolated asset paths (`data/keyframes/<source_id>/<content_hash>/...`
+  and `data/audio/<source_id>/<content_hash>/...`). Keyframes are picked by scene-change detection
   first (catches slide transitions / new code appearing on screen); if a
   video has too few scene changes (e.g. a static talking-head segment with
   code on screen the whole time), it falls back to fixed-interval sampling
@@ -36,9 +37,12 @@ video file
   detected text (pure talking-head shots) are dropped rather than indexed
   as empty evidence.
 - **`ingestion/chunker.py`** — merges consecutive short ASR segments up to
-  a configurable max duration (default 30s) so retrieval isn't indexing a
-  chunk per two-second utterance, while capping chunk length so a citation
-  stays a useful pointer. Visual chunks are one per OCR'd keyframe.
+  `CONFIG.max_chunk_duration_sec` (default 30s) and strictly splits individual
+  oversized segments ($N = \lceil\text{duration}/\text{max\_duration}\rceil$) without
+  inventing word-level timestamps. Evidence chunk IDs are generated deterministically
+  via SHA-256 from stable evidence identity (`source_id`, `content_hash`, modality,
+  start/end timestamps, text/frame metadata) ensuring stability across rebuilds without
+  randomness. Visual chunks are one per OCR'd keyframe.
 - **`ingestion/versioning.py`** — SHA-256 of the video file is the
   content-version id. Same bytes → same hash → re-ingestion is a no-op.
   Different bytes under the same `source_id` (a re-recorded or re-edited
@@ -48,12 +52,14 @@ video file
   it strictly enforces that returned evidence matches the currently active
   source content version (`c.content_hash == s.content_hash`), excluding
   stale chunks and deprecated course editions.
-- **Ingestion Lifecycle & Version Safety:**
+- **Ingestion Lifecycle & Version Safety (V1 → V2):**
   1. Check if the source is already active at the exact `content_hash` (idempotent skip).
-  2. Extract audio, transcribe (ASR), and extract/OCR keyframes.
-  3. Build evidence chunks.
-  4. Store chunks and activate the new source version in a safe sequence.
-  If extraction fails at any point, the source is never activated, the previous active version remains untouched and usable, and subsequent ingestion attempts can retry cleanly. Delayed writes from superseded versions are marked stale (`is_stale = 1`) and rejected by `active_chunks()`.
+  2. Extract audio and keyframes into version-isolated paths (`data/audio/<source_id>/<content_hash>/` and `data/keyframes/<source_id>/<content_hash>/`).
+  3. Transcribe audio and OCR keyframes.
+  4. Build evidence chunks with deterministic IDs and strict chunk duration caps.
+  5. Stage new chunks into the database via `insert_chunks(chunks)`. Chunks start as `is_stale = 1` while V1 remains active.
+  6. Activate the new version via `upsert_source(version)`: marks old version chunks as stale (`is_stale = 1`), updates the active source entry to V2, and activates V2 chunks (`is_stale = 0`).
+  7. Delayed superseded writes cannot become active (`existing.ingested_at > version.ingested_at`), and `active_chunks()` strictly serves the active version.
 
 ## Why SQLite and not a vector DB yet
 
@@ -94,10 +100,16 @@ previous active version remains intact and retrying works immediately.
 Automated unit tests in `tests/test_ingestion_version_safety.py` verify:
 - Failed ingestion can be retried without getting blocked.
 - Previous active version remains active and usable if a replacement fails.
-- Successful new version activates and replaces the previous version.
+- Successful new version activates and replaces the previous version (V1 → V2 lifecycle).
 - `active_chunks()` strictly excludes old or superseded content hashes.
 - Delayed old-version writes cannot become active.
 - Edition-wide deprecation invalidates active evidence.
+- Evidence IDs are deterministic and stable across identical rebuilds.
+- Changing version, source, modality, time, or text produces different evidence IDs.
+- Audio and keyframe asset paths are version-isolated by source ID and content hash.
+- Reprocessing the same version resolves to the same asset namespace.
+- Transcript segments exceeding max duration are split deterministically without data loss.
+- All generated chunks respect the configured maximum duration cap.
 
 ## Roadmap for the following weeks (not built yet)
 

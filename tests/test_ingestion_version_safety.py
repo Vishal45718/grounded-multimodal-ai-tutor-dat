@@ -1,13 +1,23 @@
-"""Tests for ingestion retry safety and active-version enforcement."""
 import argparse
+import sqlite3
 from unittest.mock import patch
 import pytest
 
 from config import CONFIG
-from ingestion.chunker import EvidenceChunk
+from ingestion.chunker import (
+    EvidenceChunk,
+    build_chunks,
+    compute_chunk_id,
+    split_long_segment,
+)
 from ingestion.ocr import OcrResult
 from ingestion.transcriber import TranscriptSegment
 from ingestion.versioning import SourceVersion
+from ingestion.video_processor import (
+    get_audio_asset_dir,
+    get_audio_asset_path,
+    get_keyframe_asset_dir,
+)
 from main import ingest
 from storage.corpus_store import (
     active_chunks,
@@ -314,3 +324,196 @@ def test_deprecate_edition_excludes_chunks(tmp_path):
     assert len(active_chunks()) == 1
     deprecate_edition("Fall2025")
     assert len(active_chunks()) == 0
+
+
+def test_evidence_id_is_deterministic():
+    """Requirement 1: Rebuilding the same input evidence produces identical IDs,
+    with no process randomness."""
+    transcript = [
+        TranscriptSegment(0.0, 5.0, "deterministic chunk one"),
+        TranscriptSegment(5.0, 10.0, "deterministic chunk two"),
+    ]
+    ocr_results = [
+        OcrResult(timestamp_sec=2.5, text="slide title", image_path="/data/keyframes/s1/h1/scene_00001.jpg"),
+    ]
+
+    # Run 1
+    chunks_run1 = build_chunks("cs5903-lec01", "hash_abc123", transcript, ocr_results)
+    ids_run1 = [c.chunk_id for c in chunks_run1]
+
+    # Run 2 (rebuild)
+    chunks_run2 = build_chunks("cs5903-lec01", "hash_abc123", transcript, ocr_results)
+    ids_run2 = [c.chunk_id for c in chunks_run2]
+
+    assert ids_run1 == ids_run2
+    assert len(ids_run1) == 2  # 1 audio (merged 0-10s) + 1 visual
+
+    # Direct helper test
+    id1 = compute_chunk_id("cs5903-lec01", "hash_abc123", "audio", 0.0, 10.0, "text")
+    id2 = compute_chunk_id("cs5903-lec01", "hash_abc123", "audio", 0.0, 10.0, "text")
+    assert id1 == id2
+
+
+def test_changed_version_or_evidence_produces_different_id():
+    """Requirement 1: Changing version identity, modality, time, or content changes the ID."""
+    base_id = compute_chunk_id("cs101", "v1", "audio", 0.0, 10.0, "hello world")
+
+    # Changed content/version identity
+    assert compute_chunk_id("cs101", "v2", "audio", 0.0, 10.0, "hello world") != base_id
+    # Changed source identity
+    assert compute_chunk_id("cs102", "v1", "audio", 0.0, 10.0, "hello world") != base_id
+    # Changed modality
+    assert compute_chunk_id("cs101", "v1", "visual", 0.0, 10.0, "hello world") != base_id
+    # Changed start timestamp
+    assert compute_chunk_id("cs101", "v1", "audio", 1.0, 10.0, "hello world") != base_id
+    # Changed end timestamp
+    assert compute_chunk_id("cs101", "v1", "audio", 0.0, 11.0, "hello world") != base_id
+    # Changed text
+    assert compute_chunk_id("cs101", "v1", "audio", 0.0, 10.0, "different text") != base_id
+
+
+def test_asset_paths_are_version_isolated():
+    """Requirement 2: Different versions of the same video basename produce different asset paths."""
+    v1_audio = get_audio_asset_path("lecture.mp4", "cs5903-lec01", "hash_v1")
+    v2_audio = get_audio_asset_path("lecture.mp4", "cs5903-lec01", "hash_v2")
+
+    assert v1_audio != v2_audio
+    assert "hash_v1" in v1_audio
+    assert "hash_v2" in v2_audio
+    assert "cs5903-lec01" in v1_audio and "cs5903-lec01" in v2_audio
+
+    v1_keyframes = get_keyframe_asset_dir("cs5903-lec01", "hash_v1")
+    v2_keyframes = get_keyframe_asset_dir("cs5903-lec01", "hash_v2")
+
+    assert v1_keyframes != v2_keyframes
+    assert "hash_v1" in v1_keyframes
+    assert "hash_v2" in v2_keyframes
+    assert "cs5903-lec01" in v1_keyframes and "cs5903-lec01" in v2_keyframes
+
+
+def test_same_version_uses_same_asset_namespace():
+    """Requirement 2: Reprocessing the same version resolves to the same asset location."""
+    audio_path1 = get_audio_asset_path("lecture.mp4", "cs5903-lec01", "hash_v1")
+    audio_path2 = get_audio_asset_path("lecture.mp4", "cs5903-lec01", "hash_v1")
+    assert audio_path1 == audio_path2
+
+    keyframe_dir1 = get_keyframe_asset_dir("cs5903-lec01", "hash_v1")
+    keyframe_dir2 = get_keyframe_asset_dir("cs5903-lec01", "hash_v1")
+    assert keyframe_dir1 == keyframe_dir2
+
+
+def test_long_transcript_segment_is_split():
+    """Requirement 3: A single transcript segment longer than max_chunk_duration_sec is split
+    without inventing word-level timestamps, preserving text ordering and avoiding data loss."""
+    # 45 second segment with max duration 30.0s
+    seg = TranscriptSegment(
+        start_sec=0.0,
+        end_sec=45.0,
+        text="The quick brown fox jumps over the lazy dog repeatedly during this extended lecture excerpt",
+    )
+    sub_segments = split_long_segment(seg, max_duration=30.0)
+
+    assert len(sub_segments) == 2
+    # Verify duration of each sub-segment <= 30.0
+    for sub in sub_segments:
+        assert (sub.end_sec - sub.start_sec) <= 30.0
+        assert sub.end_sec > sub.start_sec  # no zero-length chunks
+
+    # Contiguous bounds
+    assert sub_segments[0].start_sec == 0.0
+    assert sub_segments[0].end_sec == sub_segments[1].start_sec
+    assert sub_segments[-1].end_sec == 45.0
+
+    # Text ordering intact and no text lost
+    words_original = seg.text.split()
+    words_combined = (sub_segments[0].text + " " + sub_segments[1].text).split()
+    assert words_combined == words_original
+
+
+def test_all_chunks_respect_max_duration():
+    """Requirement 3: build_chunks enforces max_chunk_duration_sec across all audio chunks,
+    even with segments exceeding 30s."""
+    transcript = [
+        TranscriptSegment(0.0, 45.0, "A very long introductory segment exceeding thirty seconds limit by fifteen seconds"),
+        TranscriptSegment(45.0, 95.0, "Another huge segment that spans fifty full seconds and must be subdivided cleanly"),
+        TranscriptSegment(95.0, 100.0, "Short concluding segment"),
+    ]
+    chunks = build_chunks("cs5903-lec01", "hash1", transcript, ocr_results=[])
+
+    assert len(chunks) > 0
+    for c in chunks:
+        assert c.modality == "audio"
+        duration = c.end_sec - c.start_sec
+        assert duration <= CONFIG.max_chunk_duration_sec
+        assert duration > 0.0  # no zero-length chunks
+        assert len(c.text.strip()) > 0  # no empty text
+
+
+def test_v1_to_v2_successful_replacement_lifecycle():
+    """Requirement 4: Explicit step-by-step verification of V1 -> V2 replacement:
+    1. V1 is active.
+    2. V2 ingestion completes successfully.
+    3. V2 chunks are inserted.
+    4. V2 is activated.
+    5. V1 becomes stale.
+    6. V2 is returned by active_chunks.
+    Delayed superseded writes cannot become active.
+    """
+    v1 = SourceVersion(source_id="cs5903-lec01", content_hash="hash_v1", course_edition="Fall2026", title="Lecture 1")
+    v2 = SourceVersion(source_id="cs5903-lec01", content_hash="hash_v2", course_edition="Fall2026", title="Lecture 1")
+
+    chunk_v1 = EvidenceChunk(
+        chunk_id="chunk_v1", source_id="cs5903-lec01", content_hash="hash_v1",
+        modality="audio", start_sec=0.0, end_sec=10.0, text="V1 content",
+    )
+    chunk_v2 = EvidenceChunk(
+        chunk_id="chunk_v2", source_id="cs5903-lec01", content_hash="hash_v2",
+        modality="audio", start_sec=0.0, end_sec=10.0, text="V2 content",
+    )
+    delayed_v1_chunk = EvidenceChunk(
+        chunk_id="chunk_v1_late", source_id="cs5903-lec01", content_hash="hash_v1",
+        modality="audio", start_sec=10.0, end_sec=20.0, text="V1 late content",
+    )
+
+    # 1. V1 is active
+    insert_chunks([chunk_v1])
+    upsert_source(v1)
+    active = active_chunks()
+    assert len(active) == 1
+    assert active[0]["chunk_id"] == "chunk_v1"
+    assert active[0]["content_hash"] == "hash_v1"
+
+    # 2. V2 ingestion completes & 3. V2 chunks are inserted
+    insert_chunks([chunk_v2])
+    # Before V2 activation, V1 remains active and V2 is not in active_chunks
+    active_before = active_chunks()
+    assert len(active_before) == 1
+    assert active_before[0]["chunk_id"] == "chunk_v1"
+
+    # 4. V2 is activated
+    activated = upsert_source(v2)
+    assert activated is True
+
+    # 5. V1 becomes stale (verify in database directly)
+    with sqlite3.connect(CONFIG.corpus_db_path) as conn:
+        v1_stale = conn.execute("SELECT is_stale FROM chunks WHERE chunk_id = 'chunk_v1'").fetchone()[0]
+        v2_stale = conn.execute("SELECT is_stale FROM chunks WHERE chunk_id = 'chunk_v2'").fetchone()[0]
+        assert v1_stale == 1
+        assert v2_stale == 0
+
+    # 6. V2 is returned by active_chunks()
+    active_after = active_chunks()
+    assert len(active_after) == 1
+    assert active_after[0]["chunk_id"] == "chunk_v2"
+    assert active_after[0]["content_hash"] == "hash_v2"
+
+    # Invariant: Delayed superseded write cannot become active
+    insert_chunks([delayed_v1_chunk])
+    with sqlite3.connect(CONFIG.corpus_db_path) as conn:
+        late_stale = conn.execute("SELECT is_stale FROM chunks WHERE chunk_id = 'chunk_v1_late'").fetchone()[0]
+        assert late_stale == 1
+
+    active_final = active_chunks()
+    assert len(active_final) == 1
+    assert active_final[0]["chunk_id"] == "chunk_v2"
+

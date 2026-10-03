@@ -24,13 +24,13 @@ def ingest(args):
         return
 
     print(f"[1/4] extracting audio from {args.video}")
-    audio_path = extract_audio(args.video)
+    audio_path = extract_audio(args.video, source_id=args.source_id, content_hash=content_hash)
 
     print("[2/4] transcribing")
     transcript = transcribe(audio_path)
 
     print("[3/4] extracting + OCR'ing keyframes")
-    keyframes = extract_keyframes(args.video)
+    keyframes = extract_keyframes(args.video, source_id=args.source_id, content_hash=content_hash)
     ocr_results = ocr_keyframes(keyframes)
 
     print("[4/4] building + storing evidence chunks")

@@ -44,10 +44,15 @@ def upsert_source(version: SourceVersion) -> bool:
     Returns False (no-op) if this exact content_hash is already indexed and active."""
     with _connect() as conn:
         existing = conn.execute(
-            "SELECT content_hash, is_deprecated FROM sources WHERE source_id = ?", (version.source_id,)
+            "SELECT content_hash, ingested_at, is_deprecated FROM sources WHERE source_id = ?",
+            (version.source_id,)
         ).fetchone()
-        if existing and existing[0] == version.content_hash and bool(existing[1]) == bool(version.is_deprecated):
-            return False
+        if existing:
+            if existing[0] == version.content_hash and bool(existing[2]) == bool(version.is_deprecated):
+                return False
+            if existing[1] > version.ingested_at:
+                # A newer version is already active; delayed superseded version must never activate
+                return False
 
         # Mark chunks from previous versions as stale
         conn.execute(
