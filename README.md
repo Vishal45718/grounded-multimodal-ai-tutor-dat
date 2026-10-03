@@ -33,9 +33,7 @@ video file
   so visual evidence is never silently missed.
 - **`ingestion/transcriber.py`** — `faster-whisper` ASR, returns
   start/end-timestamped segments.
-- **`ingestion/ocr.py`** — Tesseract OCR over each keyframe. Frames with no
-  detected text (pure talking-head shots) are dropped rather than indexed
-  as empty evidence.
+- **`ingestion/ocr.py`** — Tesseract OCR over each keyframe. For successful text extraction, text is stored. If a frame has no detected text, it is preserved with an empty text field to distinguish from an OCR failure. If OCR fails, the frame is still preserved as visual evidence, with failure status and error details recorded. We do not claim visual semantic understanding exists, but the images remain available for future visual-capable retrieval paths.
 - **`ingestion/chunker.py`** — merges consecutive short ASR segments up to
   `CONFIG.max_chunk_duration_sec` (default 30s) and strictly splits individual
   oversized segments ($N = \lceil\text{duration}/\text{max\_duration}\rceil$) without

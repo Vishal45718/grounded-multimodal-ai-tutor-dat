@@ -24,6 +24,8 @@ class EvidenceChunk:
     image_path: Optional[str] = None
     asset_id: Optional[str] = None
     source_url: Optional[str] = None
+    status: str = "success"
+    error_message: Optional[str] = None
 
 
 def compute_chunk_id(
@@ -152,6 +154,8 @@ def build_chunks(
                 image_path=ocr.image_path,
                 asset_id=asset_id,
                 source_url=source_url,
+                status=ocr.status,
+                error_message=ocr.error_message,
             )
         )
 

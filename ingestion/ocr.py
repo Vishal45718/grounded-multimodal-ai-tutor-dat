@@ -4,7 +4,7 @@ labels that the audio transcript alone would miss. This is what makes M4
 function signature on screen at 12:40 say?" is unanswerable from transcript
 text alone."""
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 from ingestion.video_processor import Keyframe
 
@@ -14,6 +14,8 @@ class OcrResult:
     timestamp_sec: float
     image_path: str
     text: str
+    status: str = "success"
+    error_message: Optional[str] = None
 
 
 def ocr_keyframes(keyframes: List[Keyframe]) -> List[OcrResult]:
@@ -24,8 +26,7 @@ def ocr_keyframes(keyframes: List[Keyframe]) -> List[OcrResult]:
     for kf in keyframes:
         try:
             text = pytesseract.image_to_string(Image.open(kf.image_path)).strip()
-        except Exception:
-            text = ""
-        if text:  # skip frames with no on-screen text (e.g. talking-head shots)
-            results.append(OcrResult(timestamp_sec=kf.timestamp_sec, image_path=kf.image_path, text=text))
+            results.append(OcrResult(timestamp_sec=kf.timestamp_sec, image_path=kf.image_path, text=text, status="success"))
+        except Exception as e:
+            results.append(OcrResult(timestamp_sec=kf.timestamp_sec, image_path=kf.image_path, text="", status="failed", error_message=type(e).__name__))
     return results
