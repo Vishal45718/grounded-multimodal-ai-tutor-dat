@@ -26,6 +26,18 @@ def _connect():
 def init_db():
     with _connect() as conn, open(_SCHEMA_PATH) as f:
         conn.executescript(f.read())
+        # Safe migration if table existed previously without asset_id / source_url
+        sources_cols = [r[1] for r in conn.execute("PRAGMA table_info(sources)").fetchall()]
+        if "asset_id" not in sources_cols:
+            conn.execute("ALTER TABLE sources ADD COLUMN asset_id TEXT")
+        if "source_url" not in sources_cols:
+            conn.execute("ALTER TABLE sources ADD COLUMN source_url TEXT")
+
+        chunks_cols = [r[1] for r in conn.execute("PRAGMA table_info(chunks)").fetchall()]
+        if "asset_id" not in chunks_cols:
+            conn.execute("ALTER TABLE chunks ADD COLUMN asset_id TEXT")
+        if "source_url" not in chunks_cols:
+            conn.execute("ALTER TABLE chunks ADD COLUMN source_url TEXT")
 
 
 def is_source_active(source_id: str, content_hash: str) -> bool:
@@ -61,11 +73,12 @@ def upsert_source(version: SourceVersion) -> bool:
         )
 
         conn.execute(
-            "INSERT OR REPLACE INTO sources (source_id, content_hash, course_edition, title, ingested_at, is_deprecated) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO sources (source_id, content_hash, course_edition, title, ingested_at, is_deprecated, asset_id, source_url) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 version.source_id, version.content_hash, version.course_edition,
                 version.title, version.ingested_at, int(version.is_deprecated),
+                getattr(version, "asset_id", None), getattr(version, "source_url", None),
             ),
         )
 
@@ -107,13 +120,14 @@ def insert_chunks(chunks: List[EvidenceChunk]):
             is_stale = 0 if is_active else 1
             to_insert.append((
                 c.chunk_id, c.source_id, c.content_hash, c.modality,
-                c.start_sec, c.end_sec, c.text, c.image_path, is_stale
+                c.start_sec, c.end_sec, c.text, c.image_path, is_stale,
+                getattr(c, "asset_id", None), getattr(c, "source_url", None),
             ))
 
         conn.executemany(
             "INSERT OR REPLACE INTO chunks "
-            "(chunk_id, source_id, content_hash, modality, start_sec, end_sec, text, image_path, is_stale) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "(chunk_id, source_id, content_hash, modality, start_sec, end_sec, text, image_path, is_stale, asset_id, source_url) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             to_insert,
         )
 

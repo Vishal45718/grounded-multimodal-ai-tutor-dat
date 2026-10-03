@@ -22,6 +22,8 @@ class EvidenceChunk:
     end_sec: float
     text: str
     image_path: Optional[str] = None
+    asset_id: Optional[str] = None
+    source_url: Optional[str] = None
 
 
 def compute_chunk_id(
@@ -101,6 +103,8 @@ def build_chunks(
     content_hash: str,
     transcript: List[TranscriptSegment],
     ocr_results: List[OcrResult],
+    asset_id: Optional[str] = None,
+    source_url: Optional[str] = None,
 ) -> List[EvidenceChunk]:
     chunks: List[EvidenceChunk] = []
 
@@ -113,15 +117,15 @@ def build_chunks(
     for seg in normalized_transcript:
         prospective_span = seg.end_sec - (buf[0].start_sec if buf else seg.start_sec)
         if buf and prospective_span > CONFIG.max_chunk_duration_sec:
-            chunks.append(_flush_audio(buf, source_id, content_hash))
+            chunks.append(_flush_audio(buf, source_id, content_hash, asset_id=asset_id, source_url=source_url))
             buf = []
         buf.append(seg)
         span = buf[-1].end_sec - buf[0].start_sec
         if span >= CONFIG.max_chunk_duration_sec:
-            chunks.append(_flush_audio(buf, source_id, content_hash))
+            chunks.append(_flush_audio(buf, source_id, content_hash, asset_id=asset_id, source_url=source_url))
             buf = []
     if buf:
-        chunks.append(_flush_audio(buf, source_id, content_hash))
+        chunks.append(_flush_audio(buf, source_id, content_hash, asset_id=asset_id, source_url=source_url))
 
     # Visual chunks: one per OCR'd keyframe, timestamped at that exact
     # frame so M3's citation can seek a video player straight to it.
@@ -146,13 +150,21 @@ def build_chunks(
                 end_sec=ocr.timestamp_sec,
                 text=ocr.text,
                 image_path=ocr.image_path,
+                asset_id=asset_id,
+                source_url=source_url,
             )
         )
 
     return chunks
 
 
-def _flush_audio(buf: List[TranscriptSegment], source_id: str, content_hash: str) -> EvidenceChunk:
+def _flush_audio(
+    buf: List[TranscriptSegment],
+    source_id: str,
+    content_hash: str,
+    asset_id: Optional[str] = None,
+    source_url: Optional[str] = None,
+) -> EvidenceChunk:
     text = " ".join(s.text for s in buf).strip()
     start_sec = buf[0].start_sec
     end_sec = buf[-1].end_sec
@@ -172,4 +184,6 @@ def _flush_audio(buf: List[TranscriptSegment], source_id: str, content_hash: str
         start_sec=start_sec,
         end_sec=end_sec,
         text=text,
+        asset_id=asset_id,
+        source_url=source_url,
     )

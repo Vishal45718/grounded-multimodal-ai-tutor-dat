@@ -70,6 +70,31 @@ model and reranker. `active_chunks()` is the seam: M2 reads from it and
 builds whatever index it wants on top (FAISS/Qdrant for dense, a BM25
 index for sparse) without touching this layer.
 
+## Public Corpus Manifest & Provenance Model
+
+The prototype relies on an authoritative, bounded public instructional corpus selected from Harvard University's CS50x OpenCourseWare:
+- **Manifest Location:** `data/source_manifest.json` and `data/source_manifest.yaml`
+- **Selected Corpus Subset:**
+  - **CS50x 2024 Edition:** Weeks 0 through 5 (Scratch, C, Arrays, Algorithms, Memory, Data Structures).
+  - **CS50x 2023 Edition:** Weeks 0 and 1 (Scratch, C) retained for cross-edition versioning, supersession, and deprecation evaluation.
+
+### Edition and Version Identity
+The system maintains strict separation between logical course topics, course editions, media assets, and byte-level content versions:
+1. **Logical Source ID (`source_id`):** Identifies the logical course module across iterations (e.g. `cs50-lec00` for Week 0 Scratch).
+2. **Course Edition (`edition_id`):** Distinguishes the specific offering/year (e.g. `2024` vs `2023`). A logical lecture taught in 2023 and 2024 has the same `source_id` but distinct `edition_id`s, different measured durations (7217s vs 7543s), and distinct asset URLs.
+3. **Asset ID (`asset_id`):** Unambiguously identifies a specific public media asset within the manifest (e.g. `cs50-2024-lec00-video`).
+4. **Content Version Hash (`content_hash`):** The SHA-256 digest of the actual local bytes. Only populated when an asset has been locally retrieved and hashed.
+5. **Source & Original URLs:** Preserves both the canonical course landing page (`source_url`) and the specific original video location (`original_asset_url`).
+
+### Cataloged vs Ingested Status
+- All entries currently in `data/source_manifest.json` represent verified public instructional assets cataloged with real metadata (`ingestion_status: "cataloged"`).
+- We do not claim full local corpus ingestion until assets are physically retrieved; their `content_hash` is explicitly recorded as `null` until actual local files are downloaded and verified.
+
+### Provenance, Attribution, and Licensing
+- **Attribution:** CS50's Introduction to Computer Science, David J. Malan, Harvard University.
+- **Licence:** Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0).
+- **Public Availability & Redistribution Policy:** Public accessibility on Harvard OpenCourseWare, edX, or YouTube does **not** imply unrestricted proprietary, commercial, or public redistribution. Assets must be accessed in accordance with CC BY-NC-SA 4.0 terms, respecting attribution, non-commercial restrictions, and share-alike licensing.
+
 ## Running it
 
 ```bash
@@ -77,14 +102,20 @@ pip install -r requirements.txt
 # ffmpeg + ffprobe must also be on PATH (system packages, not pip)
 # tesseract-ocr must also be on PATH for pytesseract to work
 
+# Ingest using manifest asset resolution (auto-resolves title, edition, source_id, and provenance):
+python main.py ingest \
+  --video path/to/lecture00.mp4 \
+  --asset-id cs50-2024-lec00-video
+
+# Or ingest with explicit flags:
 python main.py ingest \
   --video path/to/lecture03.mp4 \
-  --source-id cs5903-lec03 \
-  --title "Lecture 3: Hybrid Search" \
-  --course-edition Fall2026
+  --source-id cs50-lec03 \
+  --title "Lecture 3: Algorithms" \
+  --course-edition 2024
 
 # Simulating a superseded course edition (M6):
-python main.py deprecate --course-edition Fall2025
+python main.py deprecate --course-edition 2023
 
 # Running test suite:
 pytest -v
@@ -97,7 +128,7 @@ previous active version remains intact and retrying works immediately.
 
 ## What's tested
 
-Automated unit tests in `tests/test_ingestion_version_safety.py` verify:
+Automated unit tests in `tests/test_ingestion_version_safety.py` and `tests/test_source_manifest.py` verify:
 - Failed ingestion can be retried without getting blocked.
 - Previous active version remains active and usable if a replacement fails.
 - Successful new version activates and replaces the previous version (V1 → V2 lifecycle).
@@ -110,6 +141,12 @@ Automated unit tests in `tests/test_ingestion_version_safety.py` verify:
 - Reprocessing the same version resolves to the same asset namespace.
 - Transcript segments exceeding max duration are split deterministically without data loss.
 - All generated chunks respect the configured maximum duration cap.
+- Manifest loads and validates real CS50 public instructional sources successfully.
+- Malformed manifest records (missing fields, invalid modalities, placeholder URLs) are rejected.
+- Accidental duplicate source/version/asset identities and URLs are rejected.
+- Provenance metadata (`asset_id`, `source_url`) is preserved in `SourceVersion`, `EvidenceChunk`, and database queries (`active_chunks`).
+- Cross-edition logical lectures (`2023` vs `2024`) remain strictly distinguishable.
+- CLI auto-resolves metadata and provenance from manifest when `--asset-id` is supplied.
 
 ## Roadmap for the following weeks (not built yet)
 

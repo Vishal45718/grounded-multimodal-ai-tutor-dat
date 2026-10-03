@@ -9,6 +9,7 @@ evidence corpus.
 import argparse
 
 from ingestion.chunker import build_chunks
+from ingestion.manifest import get_manifest_asset, get_manifest_source
 from ingestion.ocr import ocr_keyframes
 from ingestion.transcriber import transcribe
 from ingestion.versioning import SourceVersion, file_content_hash
@@ -18,36 +19,71 @@ from storage.corpus_store import deprecate_edition, init_db, insert_chunks, is_s
 
 def ingest(args):
     init_db()
+
+    asset_id = getattr(args, "asset_id", None)
+    manifest_record = None
+    if asset_id:
+        manifest_record = get_manifest_asset(asset_id, manifest_path=getattr(args, "manifest", None))
+        if not manifest_record:
+            raise ValueError(f"Asset ID '{asset_id}' not found in manifest")
+
+    source_id = getattr(args, "source_id", None) or (manifest_record.source_id if manifest_record else None)
+    course_edition = getattr(args, "course_edition", None) or (manifest_record.edition_id if manifest_record else None)
+    title = getattr(args, "title", None) or (manifest_record.title if manifest_record else None)
+    source_url = manifest_record.source_url if manifest_record else None
+
+    if not source_id or not course_edition or not title:
+        raise ValueError("Missing required metadata: source_id, course_edition, or title. Specify them or pass --asset-id.")
+
+    if not manifest_record:
+        manifest_record = get_manifest_source(
+            source_id,
+            edition_id=course_edition,
+            manifest_path=getattr(args, "manifest", None),
+        )
+        if manifest_record:
+            asset_id = manifest_record.asset_id
+            source_url = manifest_record.source_url
+
     content_hash = file_content_hash(args.video)
-    if is_source_active(args.source_id, content_hash):
-        print(f"[skip] {args.source_id} already indexed at hash {content_hash} -- nothing changed.")
+    if is_source_active(source_id, content_hash):
+        print(f"[skip] {source_id} already indexed at hash {content_hash} -- nothing changed.")
         return
 
     print(f"[1/4] extracting audio from {args.video}")
-    audio_path = extract_audio(args.video, source_id=args.source_id, content_hash=content_hash)
+    audio_path = extract_audio(args.video, source_id=source_id, content_hash=content_hash)
 
     print("[2/4] transcribing")
     transcript = transcribe(audio_path)
 
     print("[3/4] extracting + OCR'ing keyframes")
-    keyframes = extract_keyframes(args.video, source_id=args.source_id, content_hash=content_hash)
+    keyframes = extract_keyframes(args.video, source_id=source_id, content_hash=content_hash)
     ocr_results = ocr_keyframes(keyframes)
 
     print("[4/4] building + storing evidence chunks")
-    chunks = build_chunks(args.source_id, content_hash, transcript, ocr_results)
+    chunks = build_chunks(
+        source_id,
+        content_hash,
+        transcript,
+        ocr_results,
+        asset_id=asset_id,
+        source_url=source_url,
+    )
     
     version = SourceVersion(
-        source_id=args.source_id,
+        source_id=source_id,
         content_hash=content_hash,
-        course_edition=args.course_edition,
-        title=args.title,
+        course_edition=course_edition,
+        title=title,
+        asset_id=asset_id,
+        source_url=source_url,
     )
     insert_chunks(chunks)
     upsert_source(version)
 
     n_audio = sum(1 for c in chunks if c.modality == "audio")
     n_visual = sum(1 for c in chunks if c.modality == "visual")
-    print(f"done: {len(chunks)} chunks ({n_audio} audio, {n_visual} visual) for {args.source_id}")
+    print(f"done: {len(chunks)} chunks ({n_audio} audio, {n_visual} visual) for {source_id}")
 
 
 def deprecate(args):
@@ -62,9 +98,11 @@ def main():
 
     p_ingest = sub.add_parser("ingest", help="Ingest one lecture video")
     p_ingest.add_argument("--video", required=True)
-    p_ingest.add_argument("--source-id", required=True, help="stable logical id, e.g. cs5903-lec03")
-    p_ingest.add_argument("--title", required=True)
-    p_ingest.add_argument("--course-edition", required=True)
+    p_ingest.add_argument("--source-id", default=None, help="stable logical id, e.g. cs50-lec00")
+    p_ingest.add_argument("--title", default=None)
+    p_ingest.add_argument("--course-edition", default=None)
+    p_ingest.add_argument("--asset-id", default=None, help="Manifest asset ID (e.g. cs50-2024-w0)")
+    p_ingest.add_argument("--manifest", default=None, help="Path to source manifest (defaults to CONFIG.manifest_path)")
     p_ingest.set_defaults(func=ingest)
 
     p_dep = sub.add_parser("deprecate", help="Deprecate a whole course edition")

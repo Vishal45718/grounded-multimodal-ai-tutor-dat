@@ -13,6 +13,7 @@ class Config:
     scene_change_threshold: float = 0.35   # ffmpeg scene-detect sensitivity
     min_chunk_duration_sec: float = 3.0
     max_chunk_duration_sec: float = 30.0
+    manifest_path: str = os.environ.get("MANIFEST_PATH", "data/source_manifest.json")
 
 
 CONFIG = Config()

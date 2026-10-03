@@ -7,7 +7,9 @@ CREATE TABLE IF NOT EXISTS sources (
     course_edition  TEXT NOT NULL,
     title           TEXT NOT NULL,
     ingested_at     REAL NOT NULL,
-    is_deprecated   INTEGER NOT NULL DEFAULT 0
+    is_deprecated   INTEGER NOT NULL DEFAULT 0,
+    asset_id        TEXT,
+    source_url      TEXT
 );
 
 CREATE TABLE IF NOT EXISTS chunks (
@@ -21,7 +23,9 @@ CREATE TABLE IF NOT EXISTS chunks (
     image_path      TEXT,
     -- denormalized for M6: a chunk from an edited or deprecated source must
     -- never be served, even if a downstream embedding cache still has it.
-    is_stale        INTEGER NOT NULL DEFAULT 0
+    is_stale        INTEGER NOT NULL DEFAULT 0,
+    asset_id        TEXT,
+    source_url      TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_chunks_source ON chunks(source_id);

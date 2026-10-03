@@ -4,6 +4,7 @@ requirement)."""
 import hashlib
 import time
 from dataclasses import dataclass, field
+from typing import Optional
 
 
 def file_content_hash(path: str, chunk_size: int = 1 << 20) -> str:
@@ -28,3 +29,6 @@ class SourceVersion:
     title: str
     ingested_at: float = field(default_factory=time.time)
     is_deprecated: bool = False
+    asset_id: Optional[str] = None
+    source_url: Optional[str] = None
+
