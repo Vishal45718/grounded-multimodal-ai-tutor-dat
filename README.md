@@ -45,8 +45,15 @@ video file
   lecture) → old chunks get marked `is_stale`.
 - **`storage/`** — SQLite schema (`sources`, `chunks`) plus a small CRUD
   API. `active_chunks()` is the one query M2's retriever should ever call —
-  it already filters out stale and deprecated content, so the retrieval
-  layer doesn't need to know versioning exists.
+  it strictly enforces that returned evidence matches the currently active
+  source content version (`c.content_hash == s.content_hash`), excluding
+  stale chunks and deprecated course editions.
+- **Ingestion Lifecycle & Version Safety:**
+  1. Check if the source is already active at the exact `content_hash` (idempotent skip).
+  2. Extract audio, transcribe (ASR), and extract/OCR keyframes.
+  3. Build evidence chunks.
+  4. Store chunks and activate the new source version in a safe sequence.
+  If extraction fails at any point, the source is never activated, the previous active version remains untouched and usable, and subsequent ingestion attempts can retry cleanly. Delayed writes from superseded versions are marked stale (`is_stale = 1`) and rejected by `active_chunks()`.
 
 ## Why SQLite and not a vector DB yet
 
@@ -72,21 +79,25 @@ python main.py ingest \
 
 # Simulating a superseded course edition (M6):
 python main.py deprecate --course-edition Fall2025
+
+# Running test suite:
+pytest -v
 ```
 
 Re-running `ingest` on the exact same file is a safe no-op. Re-running it
 on an edited file (different bytes, same `--source-id`) marks the old
-chunks stale and indexes the new ones.
+chunks stale and indexes the new ones. If extraction fails mid-way, the
+previous active version remains intact and retrying works immediately.
 
-## What's already tested
+## What's tested
 
-`storage/corpus_store.py` and `ingestion/chunker.py` were smoke-tested
-directly (no video files needed) to confirm: idempotent re-ingestion,
-staleness on version change, edition-wide deprecation, and audio-chunk
-merging/splitting against the max-duration cap. The video/audio/OCR path
-depends on ffmpeg + Tesseract + a real video file, so that needs to be
-exercised on your machine — worth doing first, before wiring in M2, so any
-environment issues (missing ffmpeg, model download) surface early.
+Automated unit tests in `tests/test_ingestion_version_safety.py` verify:
+- Failed ingestion can be retried without getting blocked.
+- Previous active version remains active and usable if a replacement fails.
+- Successful new version activates and replaces the previous version.
+- `active_chunks()` strictly excludes old or superseded content hashes.
+- Delayed old-version writes cannot become active.
+- Edition-wide deprecation invalidates active evidence.
 
 ## Roadmap for the following weeks (not built yet)
 

@@ -28,40 +28,88 @@ def init_db():
         conn.executescript(f.read())
 
 
+def is_source_active(source_id: str, content_hash: str) -> bool:
+    """Check if a source is currently active at this exact content_hash."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT content_hash, is_deprecated FROM sources WHERE source_id = ?",
+            (source_id,),
+        ).fetchone()
+        return bool(row and row[0] == content_hash and row[1] == 0)
+
+
 def upsert_source(version: SourceVersion) -> bool:
-    """Returns False (no-op) if this exact content_hash is already indexed
-    for this source_id -- keeps re-ingestion idempotent. If the source_id
-    exists with a *different* hash, the old chunks are marked stale before
-    the new version is written, so retrieval never mixes evidence from two
-    versions of the same lecture."""
+    """Activates the given source version.
+    Marks older version chunks as stale and ensures new version chunks are active.
+    Returns False (no-op) if this exact content_hash is already indexed and active."""
     with _connect() as conn:
         existing = conn.execute(
-            "SELECT content_hash FROM sources WHERE source_id = ?", (version.source_id,)
+            "SELECT content_hash, is_deprecated FROM sources WHERE source_id = ?", (version.source_id,)
         ).fetchone()
-        if existing and existing[0] == version.content_hash:
+        if existing and existing[0] == version.content_hash and bool(existing[1]) == bool(version.is_deprecated):
             return False
-        if existing:
-            conn.execute("UPDATE chunks SET is_stale = 1 WHERE source_id = ?", (version.source_id,))
+
+        # Mark chunks from previous versions as stale
         conn.execute(
-            "INSERT OR REPLACE INTO sources VALUES (?, ?, ?, ?, ?, ?)",
+            "UPDATE chunks SET is_stale = 1 WHERE source_id = ? AND content_hash != ?",
+            (version.source_id, version.content_hash),
+        )
+
+        conn.execute(
+            "INSERT OR REPLACE INTO sources (source_id, content_hash, course_edition, title, ingested_at, is_deprecated) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             (
                 version.source_id, version.content_hash, version.course_edition,
                 version.title, version.ingested_at, int(version.is_deprecated),
             ),
         )
+
+        if not version.is_deprecated:
+            conn.execute(
+                "UPDATE chunks SET is_stale = 0 WHERE source_id = ? AND content_hash = ?",
+                (version.source_id, version.content_hash),
+            )
+        else:
+            conn.execute(
+                "UPDATE chunks SET is_stale = 1 WHERE source_id = ? AND content_hash = ?",
+                (version.source_id, version.content_hash),
+            )
         return True
 
 
 def insert_chunks(chunks: List[EvidenceChunk]):
+    """Inserts evidence chunks. If a chunk does not match the active source version
+    or belongs to a deprecated source, it is persisted as stale (is_stale = 1) so it
+    cannot become active."""
+    if not chunks:
+        return
     with _connect() as conn:
+        source_ids = list({c.source_id for c in chunks})
+        placeholders = ",".join("?" for _ in source_ids)
+        rows = conn.execute(
+            f"SELECT source_id, content_hash, is_deprecated FROM sources WHERE source_id IN ({placeholders})",
+            source_ids,
+        ).fetchall()
+        active_map = {row[0]: (row[1], bool(row[2])) for row in rows}
+
+        to_insert = []
+        for c in chunks:
+            is_active = (
+                c.source_id in active_map
+                and active_map[c.source_id][0] == c.content_hash
+                and not active_map[c.source_id][1]
+            )
+            is_stale = 0 if is_active else 1
+            to_insert.append((
+                c.chunk_id, c.source_id, c.content_hash, c.modality,
+                c.start_sec, c.end_sec, c.text, c.image_path, is_stale
+            ))
+
         conn.executemany(
             "INSERT OR REPLACE INTO chunks "
             "(chunk_id, source_id, content_hash, modality, start_sec, end_sec, text, image_path, is_stale) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)",
-            [
-                (c.chunk_id, c.source_id, c.content_hash, c.modality, c.start_sec, c.end_sec, c.text, c.image_path)
-                for c in chunks
-            ],
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            to_insert,
         )
 
 
@@ -77,11 +125,12 @@ def deprecate_edition(course_edition: str):
 
 
 def active_chunks(modality: Optional[str] = None) -> List[dict]:
-    """What M2's retriever is allowed to search: not stale, not deprecated."""
+    """What M2's retriever is allowed to search: not stale, not deprecated, and strictly matching active source version."""
     with _connect() as conn:
         conn.row_factory = sqlite3.Row
         q = (
-            "SELECT c.* FROM chunks c JOIN sources s ON c.source_id = s.source_id "
+            "SELECT c.* FROM chunks c "
+            "JOIN sources s ON c.source_id = s.source_id AND c.content_hash = s.content_hash "
             "WHERE c.is_stale = 0 AND s.is_deprecated = 0"
         )
         params: tuple = ()

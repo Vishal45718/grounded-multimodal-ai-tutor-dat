@@ -13,20 +13,13 @@ from ingestion.ocr import ocr_keyframes
 from ingestion.transcriber import transcribe
 from ingestion.versioning import SourceVersion, file_content_hash
 from ingestion.video_processor import extract_audio, extract_keyframes
-from storage.corpus_store import deprecate_edition, init_db, insert_chunks, upsert_source
+from storage.corpus_store import deprecate_edition, init_db, insert_chunks, is_source_active, upsert_source
 
 
 def ingest(args):
     init_db()
     content_hash = file_content_hash(args.video)
-    version = SourceVersion(
-        source_id=args.source_id,
-        content_hash=content_hash,
-        course_edition=args.course_edition,
-        title=args.title,
-    )
-    is_new = upsert_source(version)
-    if not is_new:
+    if is_source_active(args.source_id, content_hash):
         print(f"[skip] {args.source_id} already indexed at hash {content_hash} -- nothing changed.")
         return
 
@@ -42,7 +35,15 @@ def ingest(args):
 
     print("[4/4] building + storing evidence chunks")
     chunks = build_chunks(args.source_id, content_hash, transcript, ocr_results)
+    
+    version = SourceVersion(
+        source_id=args.source_id,
+        content_hash=content_hash,
+        course_edition=args.course_edition,
+        title=args.title,
+    )
     insert_chunks(chunks)
+    upsert_source(version)
 
     n_audio = sum(1 for c in chunks if c.modality == "audio")
     n_visual = sum(1 for c in chunks if c.modality == "visual")
