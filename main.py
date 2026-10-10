@@ -92,6 +92,30 @@ def deprecate(args):
     print(f"marked course edition '{args.course_edition}' as deprecated; its chunks are now stale.")
 
 
+def resolve_citation(args):
+    init_db()
+    print(f"Resolving citation for chunk {args.chunk_id}...")
+    # Basic skeleton for resolving citations directly
+    pass
+
+def ask_tutor(args):
+    init_db()
+    from retrieval.retriever import TutorRetriever
+    from generation.answer import generate_grounded_answer
+    
+    print("Loading active chunks and building indices (M2)...")
+    retriever = TutorRetriever(use_dense=True, use_sparse=True)
+    
+    print("Retrieving evidence and generating grounded answer (M3)...")
+    answer, citations = generate_grounded_answer(args.query, retriever)
+
+    print("\n--- Answer ---")
+    print(answer)
+    print("\n--- Citations ---")
+    for c in citations:
+        if c['citation_label'] in answer:
+            print(f"{c['citation_label']}: Source {c['source_id']} @ {c['start_sec']}s - {c['end_sec']}s ({c['modality']})")
+
 def main():
     parser = argparse.ArgumentParser(description="M1 evidence-corpus ingestion CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -113,6 +137,10 @@ def main():
     p_resolve = sub.add_parser("resolve-citation", help="Resolve an evidence chunk ID to an actionable citation")
     p_resolve.add_argument("--chunk-id", required=True)
     p_resolve.set_defaults(func=resolve_citation)
+
+    p_query = sub.add_parser("query", help="Ask the tutor a question (M2 & M3)")
+    p_query.add_argument("--query", required=True, help="Question to ask")
+    p_query.set_defaults(func=ask_tutor)
 
     args = parser.parse_args()
     args.func(args)
