@@ -93,10 +93,8 @@ def deprecate(args):
 
 
 def resolve_citation(args):
-    init_db()
-    print(f"Resolving citation for chunk {args.chunk_id}...")
-    # Basic skeleton for resolving citations directly
-    pass
+    from scripts.ingest_official import resolve_citation as _resolve
+    _resolve(args.chunk_id)
 
 def ask_tutor(args):
     init_db()

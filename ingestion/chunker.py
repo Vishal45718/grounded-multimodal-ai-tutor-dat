@@ -26,6 +26,8 @@ class EvidenceChunk:
     source_url: Optional[str] = None
     status: str = "success"
     error_message: Optional[str] = None
+    page_number: Optional[int] = None
+    edition_id: Optional[str] = None
 
     def __post_init__(self):
         if self.start_sec is not None:
@@ -117,6 +119,7 @@ def build_chunks(
     ocr_results: List[OcrResult],
     asset_id: Optional[str] = None,
     source_url: Optional[str] = None,
+    edition_id: Optional[str] = None,
 ) -> List[EvidenceChunk]:
     chunks: List[EvidenceChunk] = []
 
@@ -129,15 +132,15 @@ def build_chunks(
     for seg in normalized_transcript:
         prospective_span = seg.end_sec - (buf[0].start_sec if buf else seg.start_sec)
         if buf and prospective_span > CONFIG.max_chunk_duration_sec:
-            chunks.append(_flush_audio(buf, source_id, content_hash, asset_id=asset_id, source_url=source_url))
+            chunks.append(_flush_audio(buf, source_id, content_hash, asset_id=asset_id, source_url=source_url, edition_id=edition_id))
             buf = []
         buf.append(seg)
         span = buf[-1].end_sec - buf[0].start_sec
         if span >= CONFIG.max_chunk_duration_sec:
-            chunks.append(_flush_audio(buf, source_id, content_hash, asset_id=asset_id, source_url=source_url))
+            chunks.append(_flush_audio(buf, source_id, content_hash, asset_id=asset_id, source_url=source_url, edition_id=edition_id))
             buf = []
     if buf:
-        chunks.append(_flush_audio(buf, source_id, content_hash, asset_id=asset_id, source_url=source_url))
+        chunks.append(_flush_audio(buf, source_id, content_hash, asset_id=asset_id, source_url=source_url, edition_id=edition_id))
 
     # Visual chunks: one per OCR'd keyframe, timestamped at that exact
     # frame so M3's citation can seek a video player straight to it.
@@ -166,6 +169,8 @@ def build_chunks(
                 source_url=source_url,
                 status=ocr.status,
                 error_message=ocr.error_message,
+                page_number=getattr(ocr, "page_number", None),
+                edition_id=edition_id,
             )
         )
 
@@ -178,6 +183,7 @@ def _flush_audio(
     content_hash: str,
     asset_id: Optional[str] = None,
     source_url: Optional[str] = None,
+    edition_id: Optional[str] = None,
 ) -> EvidenceChunk:
     text = " ".join(s.text for s in buf).strip()
     start_sec = buf[0].start_sec
@@ -200,4 +206,5 @@ def _flush_audio(
         text=text,
         asset_id=asset_id,
         source_url=source_url,
+        edition_id=edition_id,
     )

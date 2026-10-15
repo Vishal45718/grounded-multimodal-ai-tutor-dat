@@ -1,8 +1,14 @@
 import argparse
 import os
+import sys
+
+# Ensure repository root is in sys.path when script is executed directly
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import urllib.request
 import tempfile
 import sqlite3
+
 from typing import List
 
 from ingestion.manifest import get_manifest_asset, get_manifest_source
@@ -10,7 +16,7 @@ from ingestion.transcriber import parse_srt, TranscriptSegment
 from ingestion.chunker import build_chunks
 from ingestion.versioning import SourceVersion, file_content_hash
 from storage.corpus_store import init_db, insert_chunks, upsert_source, is_source_active
-from ingestion.ocr import OcrResult
+from ingestion.ocr import OcrResult, extract_pdf_slides
 import hashlib
 from config import CONFIG
 
@@ -42,9 +48,16 @@ def resolve_citation(chunk_id: str):
 
 def ingest_official(args):
     init_db()
-    manifest_record = get_manifest_asset(args.asset_id, manifest_path=args.manifest)
+    manifest_path = getattr(args, "manifest", None) or CONFIG.manifest_path
+    asset_id = getattr(args, "asset_id", None)
+    manifest_record = None
+    if asset_id:
+        manifest_record = get_manifest_asset(asset_id, manifest_path=manifest_path)
     if not manifest_record:
-        manifest_record = get_manifest_source(args.source_id, edition_id=args.course_edition, manifest_path=args.manifest)
+        source_id = getattr(args, "source_id", None)
+        course_edition = getattr(args, "course_edition", None)
+        if source_id:
+            manifest_record = get_manifest_source(source_id, edition_id=course_edition, manifest_path=manifest_path)
     
     if not manifest_record:
         raise ValueError("Asset not found in manifest")
@@ -55,34 +68,37 @@ def ingest_official(args):
     source_url = manifest_record.source_url
     
     with tempfile.TemporaryDirectory() as tmpdir:
-        srt_path = os.path.join(tmpdir, "subs.srt")
-        print(f"Downloading official transcript for {asset_id}...")
-        urllib.request.urlretrieve(manifest_record.subtitles_url, srt_path)
-        transcript = parse_srt(srt_path)
+        srt_path = None
+        transcript = []
+        subtitles_url = manifest_record.subtitles_url or manifest_record.transcript_url
+        if subtitles_url:
+            srt_path = os.path.join(tmpdir, "subs.srt")
+            print(f"Downloading official transcript for {asset_id}...")
+            urllib.request.urlretrieve(subtitles_url, srt_path)
+            transcript = parse_srt(srt_path)
         
-        ocr_results = []
-        # If visual material like PDF is available, we could extract text here.
-        # But for this task, the transcript gives us the primary audio evidence.
-        # We will create one dummy visual OCR result just to show the pipeline works
-        # if the official slides were used.
+        pdf_path = None
         if manifest_record.slides_url:
             print(f"Downloading official slides for {asset_id}...")
             pdf_path = os.path.join(tmpdir, "slides.pdf")
             urllib.request.urlretrieve(manifest_record.slides_url, pdf_path)
-            
-            # Simple pseudo-extraction
-            ocr_results.append(OcrResult(
-                timestamp_sec=None,
-                image_path=pdf_path,
-                text="Official slide content extracted from PDF",
-                status="success"
-            ))
 
         # Generate deterministic content_hash from downloaded inputs
-        hash_parts = [file_content_hash(srt_path)]
-        if manifest_record.slides_url:
+        hash_parts = []
+        if srt_path and os.path.exists(srt_path):
+            hash_parts.append(file_content_hash(srt_path))
+        if pdf_path and os.path.exists(pdf_path):
             hash_parts.append(file_content_hash(pdf_path))
         content_hash = hashlib.sha256("".join(hash_parts).encode("utf-8")).hexdigest()[:16]
+
+        ocr_results = []
+        if pdf_path and os.path.exists(pdf_path):
+            print(f"Rendering slides and extracting text for {asset_id}...")
+            ocr_results = extract_pdf_slides(
+                pdf_path=pdf_path,
+                source_id=source_id,
+                content_hash=content_hash,
+            )
 
         print(f"Building chunks...")
         chunks = build_chunks(
@@ -106,25 +122,33 @@ def ingest_official(args):
         upsert_source(version)
         print(f"Ingested {len(chunks)} chunks using official materials.")
         
-        # Save one sample chunk to print out
-        sample_chunk = next((c for c in chunks if c.modality == "audio"), None)
-        if sample_chunk:
-            print(f"\nCreated real evidence example ID: {sample_chunk.chunk_id}")
-            print(f"Try running: python scripts/ingest_official.py resolve --chunk-id {sample_chunk.chunk_id}")
+        sample_audio = next((c for c in chunks if c.modality == "audio"), None)
+        if sample_audio:
+            print(f"\nCreated real audio evidence example ID: {sample_audio.chunk_id}")
+            print(f"Try running: python scripts/ingest_official.py resolve --chunk-id {sample_audio.chunk_id}")
+        sample_visual = next((c for c in chunks if c.modality == "visual"), None)
+        if sample_visual:
+            print(f"\nCreated real visual evidence example ID: {sample_visual.chunk_id}")
+            print(f"Try running: python scripts/ingest_official.py resolve --chunk-id {sample_visual.chunk_id}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
     
     p_ingest = subparsers.add_parser("ingest")
-    p_ingest.add_argument("--asset-id", required=True)
-    p_ingest.add_argument("--manifest", default="data/source_manifest.yaml")
+    p_ingest.add_argument("--asset-id", default=None)
+    p_ingest.add_argument("--source-id", default=None)
+    p_ingest.add_argument("--course-edition", default=None)
+    p_ingest.add_argument("--manifest", default=CONFIG.manifest_path)
     
     p_resolve = subparsers.add_parser("resolve")
     p_resolve.add_argument("--chunk-id", required=True)
     
     args = parser.parse_args()
     if args.command == "ingest":
+        if not args.asset_id and not args.source_id:
+            parser.error("Either --asset-id or --source-id is required for ingestion.")
         ingest_official(args)
     elif args.command == "resolve":
         resolve_citation(args.chunk_id)
+

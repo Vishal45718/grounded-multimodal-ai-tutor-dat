@@ -111,7 +111,7 @@ def test_content_hash_is_deterministic(tmp_path):
     hash2 = file_content_hash(str(file1))
     
     assert hash1 == hash2
-    assert hash1 == hashlib.sha256(b"dummy content").hexdigest()[:16]
+    assert hash1 == hashlib.sha256(b"dummy content").hexdigest()
 
 def test_content_hash_changes_when_input_changes(tmp_path):
     from ingestion.versioning import file_content_hash

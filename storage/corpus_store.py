@@ -401,7 +401,7 @@ def active_chunks(modality: Optional[str] = None) -> List[dict]:
     reset by a delayed writer or an older database operation.
     """
     query = """
-        SELECT c.*
+        SELECT c.*, COALESCE(c.edition_id, s.course_edition) AS course_edition
         FROM chunks AS c
         JOIN sources AS s
           ON s.source_id = c.source_id

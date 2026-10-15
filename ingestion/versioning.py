@@ -50,6 +50,8 @@ class SourceVersion:
     license_url: Optional[str] = None
     attribution: Optional[str] = None
     modification_notice: Optional[str] = None
+    asset_id: Optional[str] = None
+    is_deprecated: bool = False
 
     def __post_init__(self) -> None:
         if not self.source_id.strip():

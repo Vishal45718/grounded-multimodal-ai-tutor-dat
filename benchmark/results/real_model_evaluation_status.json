@@ -1,0 +1,6 @@
+{
+  "execution_mode": "real",
+  "backend": "gemini",
+  "status": "not_run",
+  "reason": "API key not set for backend 'gemini'. Set GEMINI_API_KEY or OPENAI_API_KEY to execute real model evaluation."
+}
