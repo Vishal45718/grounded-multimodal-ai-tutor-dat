@@ -1,0 +1,162 @@
+{
+  "mode": "mock",
+  "total_visual_cases": 5,
+  "conditions": {
+    "transcript_only": {
+      "passed": 5,
+      "total": 5,
+      "behavior": [
+        {
+          "id": "cs50-2024-lec01-vis-01",
+          "output": "I abstain from answering because required visual evidence is missing."
+        },
+        {
+          "id": "cs50-2024-lec01-vis-02",
+          "output": "I abstain from answering because required visual evidence is missing."
+        },
+        {
+          "id": "cs50-2024-lec01-vis-03",
+          "output": "I abstain from answering because required visual evidence is missing."
+        },
+        {
+          "id": "cs50-2024-lec01-vis-04",
+          "output": "I abstain from answering because required visual evidence is missing."
+        },
+        {
+          "id": "cs50-2024-lec01-vis-05",
+          "output": "I abstain from answering because required visual evidence is missing."
+        }
+      ]
+    },
+    "ocr_text_only": {
+      "passed": 5,
+      "total": 5,
+      "behavior": [
+        {
+          "id": "cs50-2024-lec01-vis-01",
+          "output": "I abstain from answering because required visual evidence is missing."
+        },
+        {
+          "id": "cs50-2024-lec01-vis-02",
+          "output": "I abstain from answering because required visual evidence is missing."
+        },
+        {
+          "id": "cs50-2024-lec01-vis-03",
+          "output": "I abstain from answering because required visual evidence is missing."
+        },
+        {
+          "id": "cs50-2024-lec01-vis-04",
+          "output": "I abstain from answering because required visual evidence is missing."
+        },
+        {
+          "id": "cs50-2024-lec01-vis-05",
+          "output": "I abstain from answering because required visual evidence is missing."
+        }
+      ]
+    },
+    "visual_input": {
+      "passed": 5,
+      "total": 5,
+      "behavior": [
+        {
+          "id": "cs50-2024-lec01-vis-01",
+          "output": "Based on the visual evidence shown in the slide [Evidence 1], the answer is confirmed."
+        },
+        {
+          "id": "cs50-2024-lec01-vis-02",
+          "output": "In the program block diagram on slide 15, the central box is empty [Evidence 1]."
+        },
+        {
+          "id": "cs50-2024-lec01-vis-03",
+          "output": "In the compilation block diagram on slide 19, 'compiler' is inside the central box [Evidence 1]."
+        },
+        {
+          "id": "cs50-2024-lec01-vis-04",
+          "output": "In the program block diagram on slide 15, the central box is empty [Evidence 1]."
+        },
+        {
+          "id": "cs50-2024-lec01-vis-05",
+          "output": "In the return value diagram on slide 50, 'function' is in a box between the arrows [Evidence 1]."
+        }
+      ]
+    },
+    "correct_image": {
+      "passed": 5,
+      "total": 5,
+      "behavior": [
+        {
+          "id": "cs50-2024-lec01-vis-01",
+          "output": "Based on the visual evidence shown in the slide [Evidence 1], the answer is confirmed."
+        },
+        {
+          "id": "cs50-2024-lec01-vis-02",
+          "output": "In the program block diagram on slide 15, the central box is empty [Evidence 1]."
+        },
+        {
+          "id": "cs50-2024-lec01-vis-03",
+          "output": "In the compilation block diagram on slide 19, 'compiler' is inside the central box [Evidence 1]."
+        },
+        {
+          "id": "cs50-2024-lec01-vis-04",
+          "output": "In the program block diagram on slide 15, the central box is empty [Evidence 1]."
+        },
+        {
+          "id": "cs50-2024-lec01-vis-05",
+          "output": "In the return value diagram on slide 50, 'function' is in a box between the arrows [Evidence 1]."
+        }
+      ]
+    },
+    "image_removed": {
+      "passed": 5,
+      "total": 5,
+      "behavior": [
+        {
+          "id": "cs50-2024-lec01-vis-01",
+          "output": "I abstain from answering because required visual evidence is missing."
+        },
+        {
+          "id": "cs50-2024-lec01-vis-02",
+          "output": "I abstain from answering because required visual evidence is missing."
+        },
+        {
+          "id": "cs50-2024-lec01-vis-03",
+          "output": "I abstain from answering because required visual evidence is missing."
+        },
+        {
+          "id": "cs50-2024-lec01-vis-04",
+          "output": "I abstain from answering because required visual evidence is missing."
+        },
+        {
+          "id": "cs50-2024-lec01-vis-05",
+          "output": "I abstain from answering because required visual evidence is missing."
+        }
+      ]
+    },
+    "image_swapped": {
+      "passed": 5,
+      "total": 5,
+      "behavior": [
+        {
+          "id": "cs50-2024-lec01-vis-01",
+          "output": "I abstain from answering because the visual evidence is unsupported or contradictory."
+        },
+        {
+          "id": "cs50-2024-lec01-vis-02",
+          "output": "I abstain from answering because the visual evidence is unsupported or contradictory."
+        },
+        {
+          "id": "cs50-2024-lec01-vis-03",
+          "output": "I abstain from answering because the visual evidence is unsupported or contradictory."
+        },
+        {
+          "id": "cs50-2024-lec01-vis-04",
+          "output": "I abstain from answering because the visual evidence is unsupported or contradictory."
+        },
+        {
+          "id": "cs50-2024-lec01-vis-05",
+          "output": "I abstain from answering because the visual evidence is unsupported or contradictory."
+        }
+      ]
+    }
+  }
+}
