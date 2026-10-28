@@ -1,0 +1,444 @@
+[
+  {
+    "case_id": "cs50-2024-lec01-vis-01",
+    "question": "In the first C code example for 'hello, world' shown on screen, which specific keyword or function is highlighted in purple?",
+    "category": "visual",
+    "answerability": "answerable",
+    "visual_required": true,
+    "previous_expected_evidence_ids": [
+      "ce6cced76ac84e1dd6838fdd816319fc"
+    ],
+    "proposed_current_evidence_ids": [
+      "26e6a09bdeb383a528ef7a4709ebd707"
+    ],
+    "source_version_info": {
+      "source_id": "cs50-lec01",
+      "course_edition": "2024",
+      "content_hash": "44469ebd8de3e045",
+      "page_number": 11,
+      "image_path": "data/keyframes/cs50-lec01/44469ebd8de3e045/slide_00011.jpg"
+    },
+    "verification_status": "verified",
+    "explanation": "Mapped to Slide 11 JPEG image where printf is syntax-highlighted in purple (RGB [128, 77, 255]). Verified on disk and in corpus.db."
+  },
+  {
+    "case_id": "cs50-2024-lec01-vis-02",
+    "question": "In the block diagram illustrating a general program with inputs and outputs, what text is written inside the central box?",
+    "category": "visual",
+    "answerability": "answerable",
+    "visual_required": true,
+    "previous_expected_evidence_ids": [
+      "3d5dc8044490f63ea809f8790a713a71"
+    ],
+    "proposed_current_evidence_ids": [
+      "adcc32dab442ac00d0877576b1ffa194"
+    ],
+    "source_version_info": {
+      "source_id": "cs50-lec01",
+      "course_edition": "2024",
+      "content_hash": "44469ebd8de3e045",
+      "page_number": 16,
+      "image_path": "data/keyframes/cs50-lec01/44469ebd8de3e045/slide_00016.jpg"
+    },
+    "verification_status": "verified",
+    "explanation": "Mapped to Slide 16 JPEG image (0-index 15) illustrating general program input/output with an explicitly empty central box."
+  },
+  {
+    "case_id": "cs50-2024-lec01-vis-03",
+    "question": "In the block diagram illustrating the compilation process, where is the word 'compiler' positioned relative to the other elements?",
+    "category": "visual",
+    "answerability": "answerable",
+    "visual_required": true,
+    "previous_expected_evidence_ids": [
+      "94b1bfb2f9866b1bb185079e4448160c"
+    ],
+    "proposed_current_evidence_ids": [
+      "66ba9ddeed44a43bb4099d7fb110db77"
+    ],
+    "source_version_info": {
+      "source_id": "cs50-lec01",
+      "course_edition": "2024",
+      "content_hash": "44469ebd8de3e045",
+      "page_number": 20,
+      "image_path": "data/keyframes/cs50-lec01/44469ebd8de3e045/slide_00020.jpg"
+    },
+    "verification_status": "verified",
+    "explanation": "Mapped to Slide 20 JPEG image (0-index 19) where compiler is positioned inside the central box between source code and machine code."
+  },
+  {
+    "case_id": "cs50-2024-lec01-vis-04",
+    "question": "In the block diagram illustrating a function with side effects, what text is positioned inside the central box?",
+    "category": "visual",
+    "answerability": "answerable",
+    "visual_required": true,
+    "previous_expected_evidence_ids": [
+      "ef6d4099faef8686bbb041074441f7b7"
+    ],
+    "proposed_current_evidence_ids": [
+      "4ef71a50796b245adc6b2e106553327f"
+    ],
+    "source_version_info": {
+      "source_id": "cs50-lec01",
+      "course_edition": "2024",
+      "content_hash": "44469ebd8de3e045",
+      "page_number": 30,
+      "image_path": "data/keyframes/cs50-lec01/44469ebd8de3e045/slide_00030.jpg"
+    },
+    "verification_status": "verified",
+    "explanation": "Mapped to Slide 30 JPEG image (0-index 29) illustrating a function with side effects with function positioned inside the central box."
+  },
+  {
+    "case_id": "cs50-2024-lec01-vis-05",
+    "question": "In the block diagram illustrating a function returning a value, where is the word 'function' located relative to the arrows?",
+    "category": "visual",
+    "answerability": "answerable",
+    "visual_required": true,
+    "previous_expected_evidence_ids": [
+      "728ac8c9f31600f3de7be8aaf3810acb"
+    ],
+    "proposed_current_evidence_ids": [
+      "168d5c7b40d8eb7362dd5ba966692a0c"
+    ],
+    "source_version_info": {
+      "source_id": "cs50-lec01",
+      "course_edition": "2024",
+      "content_hash": "44469ebd8de3e045",
+      "page_number": 51,
+      "image_path": "data/keyframes/cs50-lec01/44469ebd8de3e045/slide_00051.jpg"
+    },
+    "verification_status": "verified",
+    "explanation": "Mapped to Slide 51 JPEG image (0-index 50) illustrating a function returning a value with function inside the box between arguments and return value."
+  },
+  {
+    "case_id": "cs50-2024-lec01-cm-01",
+    "question": "According to the slide showing the 'side effects' block diagram and the instructor's explanation, what acts as the input to a function?",
+    "category": "cross-modal",
+    "answerability": "answerable",
+    "visual_required": false,
+    "previous_expected_evidence_ids": [
+      "ef6d4099faef8686bbb041074441f7b7",
+      "ba1a7f113c772bf9bcc2ef49cf0c3a0a"
+    ],
+    "proposed_current_evidence_ids": [
+      "4ef71a50796b245adc6b2e106553327f",
+      "b7d70d4c2d174b531784b118ff368a37"
+    ],
+    "source_version_info": {
+      "source_id": "cs50-lec01",
+      "course_edition": "2024",
+      "content_hash": "44469ebd8de3e045",
+      "page_number": 30,
+      "start_sec": 1127.15,
+      "end_sec": 1156.01
+    },
+    "verification_status": "verified",
+    "explanation": "Combines visual Slide 30 (side effects block diagram) with audio transcript chunk [1127.15-1156.01] explaining that inputs to functions are called arguments."
+  },
+  {
+    "case_id": "cs50-2024-lec01-cm-02",
+    "question": "How many consecutive '1' bits are shown on the slide demonstrating the maximum positive integer, and what approximate value does the instructor say this represents?",
+    "category": "cross-modal",
+    "answerability": "answerable",
+    "visual_required": false,
+    "previous_expected_evidence_ids": [
+      "1a975610cb79f50c8644838c76023c60",
+      "4d88c0342ba599f32cd62a6fcf40df00"
+    ],
+    "proposed_current_evidence_ids": [
+      "de93dd20cc0bc7697a20b29fc1316ae4",
+      "fdcd47e41960696d7b1477a1d6677b3c"
+    ],
+    "source_version_info": {
+      "source_id": "cs50-lec01",
+      "course_edition": "2024",
+      "content_hash": "44469ebd8de3e045",
+      "page_number": 193,
+      "start_sec": 7856.18,
+      "end_sec": 7882.26
+    },
+    "verification_status": "verified",
+    "explanation": "Combines visual Slide 193 (showing thirty-two consecutive 1 bits) with audio transcript chunk [7856.18-7882.26] explaining that 32 ones represent roughly 4 billion."
+  },
+  {
+    "case_id": "cs50-2024-lec01-term-01",
+    "question": "According to the lecture, what is a compiler?",
+    "category": "exact terminology",
+    "answerability": "answerable",
+    "visual_required": false,
+    "previous_expected_evidence_ids": [
+      "ac9c047db56aede5c3738ef414736dc7"
+    ],
+    "proposed_current_evidence_ids": [
+      "f401faede7640cfb619a85de28071b52"
+    ],
+    "source_version_info": {
+      "source_id": "cs50-lec01",
+      "course_edition": "2024",
+      "content_hash": "44469ebd8de3e045",
+      "start_sec": 325.672,
+      "end_sec": 355.04
+    },
+    "verification_status": "verified",
+    "explanation": "Mapped to audio transcript chunk [325.672-355.04] where Malan defines a compiler as a program that translates one language to another, such as source code to machine code."
+  },
+  {
+    "case_id": "cs50-2024-lec01-term-02",
+    "question": "What does the instructor define 'source code' as?",
+    "category": "exact terminology",
+    "answerability": "answerable",
+    "visual_required": false,
+    "previous_expected_evidence_ids": [
+      "443b7a1a789fb2cbd080cbb1501d1b7b"
+    ],
+    "proposed_current_evidence_ids": [
+      "96c1b20361e78b1adbcab4ba2042e3e8"
+    ],
+    "source_version_info": {
+      "source_id": "cs50-lec01",
+      "course_edition": "2024",
+      "content_hash": "44469ebd8de3e045",
+      "start_sec": 238.19,
+      "end_sec": 267.57
+    },
+    "verification_status": "verified",
+    "explanation": "Mapped to audio transcript chunk [238.19-267.57] defining source code as what humans write, as opposed to binary machine code."
+  },
+  {
+    "case_id": "cs50-2024-lec01-conc-01",
+    "question": "Why does the instructor recommend replacing an 'else if' with a simple 'else' when checking if two numbers are equal after already determining they are neither less than nor greater than each other?",
+    "category": "conceptual/paraphrased",
+    "answerability": "answerable",
+    "visual_required": false,
+    "previous_expected_evidence_ids": [
+      "1d39ca8e8a96c876afe2b3df79efbacc",
+      "e757255af59f2050c68b34265d3c9247"
+    ],
+    "proposed_current_evidence_ids": [
+      "66cd61f165c0ec02d3031b6199e395da",
+      "defffc426a72b6e447d35d808720d03b"
+    ],
+    "source_version_info": {
+      "source_id": "cs50-lec01",
+      "course_edition": "2024",
+      "content_hash": "44469ebd8de3e045",
+      "start_sec": 3658.07,
+      "end_sec": 3716.48
+    },
+    "verification_status": "verified",
+    "explanation": "Mapped to audio chunks [3658.07-3716.48] where Malan critiques asking else if x==y when logical guarantee exists, wasting computer and programmer time."
+  },
+  {
+    "case_id": "cs50-2024-lec01-conc-02",
+    "question": "What is the primary purpose of adding comments to your code?",
+    "category": "conceptual/paraphrased",
+    "answerability": "answerable",
+    "visual_required": false,
+    "previous_expected_evidence_ids": [
+      "246ce144176d91a5f6afc9ba0a68dd44",
+      "248ecd16ec8c5dfa5251d251c2c2a5eb"
+    ],
+    "proposed_current_evidence_ids": [
+      "8f48206632ce8b0c659e64ccc76628fd",
+      "0959a6fb2760a01598383057a4190f51"
+    ],
+    "source_version_info": {
+      "source_id": "cs50-lec01",
+      "course_edition": "2024",
+      "content_hash": "44469ebd8de3e045",
+      "start_sec": 7622.06,
+      "end_sec": 7680.44
+    },
+    "verification_status": "verified",
+    "explanation": "Mapped to audio chunks [7622.06-7680.44] explaining comments in C as notes to self ignored by compiler."
+  },
+  {
+    "case_id": "cs50-2024-lec01-conc-03",
+    "question": "How does floating point imprecision differ from integer overflow?",
+    "category": "conceptual/paraphrased",
+    "answerability": "answerable",
+    "visual_required": false,
+    "previous_expected_evidence_ids": [
+      "b4565b1a5162cce21074fb938de83f97"
+    ],
+    "proposed_current_evidence_ids": [
+      "4366ff4a486de06efc9acdb40b412f79"
+    ],
+    "source_version_info": {
+      "source_id": "cs50-lec01",
+      "course_edition": "2024",
+      "content_hash": "44469ebd8de3e045",
+      "start_sec": 8421.842,
+      "end_sec": 8449.71
+    },
+    "verification_status": "verified",
+    "explanation": "Mapped to audio chunk [8421.842-8449.71] contrasting integer overflow with floating point imprecision due to finite memory representing infinite real numbers."
+  },
+  {
+    "case_id": "cs50-2024-lec01-code-01",
+    "question": "If you want to use the get_string function, which specific header file must be included at the top of your C file?",
+    "category": "code/function-symbol",
+    "answerability": "answerable",
+    "visual_required": false,
+    "previous_expected_evidence_ids": [
+      "1adf678edc4c69ff6e34ef03bb4ada21"
+    ],
+    "proposed_current_evidence_ids": [
+      "8bb0c26965dc527567dee9b3a941b1f1"
+    ],
+    "source_version_info": {
+      "source_id": "cs50-lec01",
+      "course_edition": "2024",
+      "content_hash": "44469ebd8de3e045",
+      "start_sec": 2371.01,
+      "end_sec": 2399.41
+    },
+    "verification_status": "verified",
+    "explanation": "Mapped to audio chunk [2371.01-2399.41] stating that include cs50.h teaches compiler about get_string."
+  },
+  {
+    "case_id": "cs50-2024-lec01-code-02",
+    "question": "What does the symbol '\\n' represent in C strings?",
+    "category": "code/function-symbol",
+    "answerability": "answerable",
+    "visual_required": false,
+    "previous_expected_evidence_ids": [
+      "645df93cf9c599ee0e56970ab49c19d1"
+    ],
+    "proposed_current_evidence_ids": [
+      "361435ae093f0320cc54b576af2ddcc6",
+      "a9db8475fe770d5d7c76585a8573486f"
+    ],
+    "source_version_info": {
+      "source_id": "cs50-lec01",
+      "course_edition": "2024",
+      "content_hash": "44469ebd8de3e045",
+      "start_sec": 1185.8,
+      "end_sec": 1243.43
+    },
+    "verification_status": "verified",
+    "explanation": "Mapped to audio chunks [1185.8-1243.43] explaining backslash n as escape sequence to produce a newline character."
+  },
+  {
+    "case_id": "cs50-2024-lec01-time-01",
+    "question": "At what point in the lecture does the instructor introduce the Pac-Man level 256 bug as an example of integer overflow?",
+    "category": "timestamp/evidence",
+    "answerability": "answerable",
+    "visual_required": false,
+    "previous_expected_evidence_ids": [
+      "1668ace7f5bf6fc73808d9b4ab0e0ef2"
+    ],
+    "proposed_current_evidence_ids": [
+      "5b1d525a9ee5cae95c2f636a2c652f78",
+      "aae6eea8ce2236bf68a43ac94b91185e"
+    ],
+    "source_version_info": {
+      "source_id": "cs50-lec01",
+      "course_edition": "2024",
+      "content_hash": "44469ebd8de3e045",
+      "start_sec": 8618.17,
+      "end_sec": 8674.5
+    },
+    "verification_status": "verified",
+    "explanation": "Mapped to audio chunks [8618.17-8674.5] discussing Pac-Man level 256 8-bit integer overflow bug wrapping to zero."
+  },
+  {
+    "case_id": "cs50-2024-lec01-time-02",
+    "question": "In which context does the instructor discuss the command-line command 'make'?",
+    "category": "timestamp/evidence",
+    "answerability": "answerable",
+    "visual_required": false,
+    "previous_expected_evidence_ids": [
+      "286bcb99bd52248bd68dd5a39b64e996"
+    ],
+    "proposed_current_evidence_ids": [
+      "f4bacdcbd3b9e6d8670c8d735b21d3a3"
+    ],
+    "source_version_info": {
+      "source_id": "cs50-lec01",
+      "course_edition": "2024",
+      "content_hash": "44469ebd8de3e045",
+      "start_sec": 584.71,
+      "end_sec": 613.71
+    },
+    "verification_status": "verified",
+    "explanation": "Mapped to audio chunk [584.71-613.71] introducing make as compiler tool to convert source code into machine code."
+  },
+  {
+    "case_id": "cs50-2024-lec01-part-01",
+    "question": "According to the lecture, what happened to the Boeing 787 airplane and were there any casualties?",
+    "category": "partially supported",
+    "answerability": "partial",
+    "visual_required": false,
+    "previous_expected_evidence_ids": [
+      "5459bc14e9331a485bdeb8e7cf227808",
+      "e293cf72eb250a36d33677e983085c7e"
+    ],
+    "proposed_current_evidence_ids": [
+      "80455e4854836ceb9726cacad84c32bd",
+      "9a707bec5e9c8cb961cb71378cfa8292"
+    ],
+    "source_version_info": {
+      "source_id": "cs50-lec01",
+      "course_edition": "2024",
+      "content_hash": "44469ebd8de3e045",
+      "start_sec": 8731.56,
+      "end_sec": 8786.77
+    },
+    "verification_status": "verified",
+    "explanation": "Mapped to audio chunks [8731.56-8786.77] detailing Boeing 787 power loss after 248 days continuous operation due to 32-bit counter overflow, with no mention of casualties."
+  },
+  {
+    "case_id": "cs50-2024-lec01-part-02",
+    "question": "According to the lecture, what is the 'make' command and how do you install it on a Windows computer?",
+    "category": "partially supported",
+    "answerability": "partial",
+    "visual_required": false,
+    "previous_expected_evidence_ids": [
+      "286bcb99bd52248bd68dd5a39b64e996",
+      "c1a1e77bec8c9b1c23e941fd6b1f4100"
+    ],
+    "proposed_current_evidence_ids": [
+      "f4bacdcbd3b9e6d8670c8d735b21d3a3",
+      "c27fbf8c5463ba84625feba4b60b60c8"
+    ],
+    "source_version_info": {
+      "source_id": "cs50-lec01",
+      "course_edition": "2024",
+      "content_hash": "44469ebd8de3e045",
+      "start_sec": 355.04,
+      "end_sec": 613.71
+    },
+    "verification_status": "verified",
+    "explanation": "Mapped to audio chunks [355.04-382.68] and [584.71-613.71] defining make and explaining why students use cloud environment rather than local Windows installation."
+  },
+  {
+    "case_id": "cs50-2024-lec01-unans-01",
+    "question": "How do you implement a doubly linked list in C according to this lecture?",
+    "category": "unanswerable/off-corpus",
+    "answerability": "unanswerable",
+    "visual_required": false,
+    "previous_expected_evidence_ids": [],
+    "proposed_current_evidence_ids": [],
+    "source_version_info": {
+      "source_id": "cs50-lec01",
+      "course_edition": "2024"
+    },
+    "verification_status": "verified",
+    "explanation": "Unanswerable off-corpus question; legitimately no supporting evidence in Lecture 1."
+  },
+  {
+    "case_id": "cs50-2024-lec01-unans-02",
+    "question": "What is David Malan's favorite programming language?",
+    "category": "unanswerable/off-corpus",
+    "answerability": "unanswerable",
+    "visual_required": false,
+    "previous_expected_evidence_ids": [],
+    "proposed_current_evidence_ids": [],
+    "source_version_info": {
+      "source_id": "cs50-lec01",
+      "course_edition": "2024"
+    },
+    "verification_status": "verified",
+    "explanation": "Unanswerable off-corpus question; legitimately no supporting evidence in Lecture 1."
+  }
+]

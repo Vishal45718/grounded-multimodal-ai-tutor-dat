@@ -1,0 +1,302 @@
+[
+  {
+    "case_id": "cs50-2024-lec01-vis-01",
+    "question": "In the first C code example for 'hello, world' shown on screen, which specific keyword or function is highlighted in purple?",
+    "expected_answer": "printf",
+    "condition": "transcript_only",
+    "image_supplied": false,
+    "raw_answer": "I abstain from answering because required visual evidence was not found in retrieved material.",
+    "citations": [],
+    "status": "abstained",
+    "explanation": "Model safely abstained or reported unsupported visual evidence.",
+    "evidence_used": [
+      "ec8984184c5528127a1dc0e83fc13ee8"
+    ]
+  },
+  {
+    "case_id": "cs50-2024-lec01-vis-01",
+    "question": "In the first C code example for 'hello, world' shown on screen, which specific keyword or function is highlighted in purple?",
+    "expected_answer": "printf",
+    "condition": "ocr_only",
+    "image_supplied": false,
+    "raw_answer": "I abstain from answering because required visual evidence is missing or invalid ([Evidence 1]: No image path provided).",
+    "citations": [],
+    "status": "abstained",
+    "explanation": "Model safely abstained or reported unsupported visual evidence.",
+    "evidence_used": [
+      "26e6a09bdeb383a528ef7a4709ebd707"
+    ]
+  },
+  {
+    "case_id": "cs50-2024-lec01-vis-01",
+    "question": "In the first C code example for 'hello, world' shown on screen, which specific keyword or function is highlighted in purple?",
+    "expected_answer": "printf",
+    "condition": "visual_input",
+    "image_supplied": true,
+    "image_path": "data/keyframes/cs50-lec01/44469ebd8de3e045/slide_00011.jpg",
+    "page_number": 11,
+    "raw_answer": "In the C code shown in [Evidence 1], the function 'printf' is highlighted in purple.",
+    "citations": [
+      {
+        "citation_label": "[Evidence 1]",
+        "chunk_id": "26e6a09bdeb383a528ef7a4709ebd707",
+        "source_id": "cs50-lec01",
+        "asset_id": "cs50-2024-lec01-video",
+        "content_hash": "44469ebd8de3e045",
+        "course_edition": "2024",
+        "edition_id": null,
+        "modality": "visual",
+        "start_sec": null,
+        "end_sec": null,
+        "image_path": "data/keyframes/cs50-lec01/44469ebd8de3e045/slide_00011.jpg",
+        "page_number": 11,
+        "source_url": "https://cs50.harvard.edu/x/2024/weeks/1/"
+      }
+    ],
+    "status": "correct",
+    "explanation": "Correctly identified printf highlighted in purple.",
+    "evidence_used": [
+      "26e6a09bdeb383a528ef7a4709ebd707"
+    ]
+  },
+  {
+    "case_id": "cs50-2024-lec01-vis-02",
+    "question": "In the block diagram illustrating a general program with inputs and outputs, what text is written inside the central box?",
+    "expected_answer": "Nothing, the central box is empty.",
+    "condition": "transcript_only",
+    "image_supplied": false,
+    "raw_answer": "I abstain from answering because required visual evidence was not found in retrieved material.",
+    "citations": [],
+    "status": "abstained",
+    "explanation": "Model safely abstained or reported unsupported visual evidence.",
+    "evidence_used": [
+      "ec8984184c5528127a1dc0e83fc13ee8"
+    ]
+  },
+  {
+    "case_id": "cs50-2024-lec01-vis-02",
+    "question": "In the block diagram illustrating a general program with inputs and outputs, what text is written inside the central box?",
+    "expected_answer": "Nothing, the central box is empty.",
+    "condition": "ocr_only",
+    "image_supplied": false,
+    "raw_answer": "I abstain from answering because required visual evidence is missing or invalid ([Evidence 1]: No image path provided).",
+    "citations": [],
+    "status": "abstained",
+    "explanation": "Model safely abstained or reported unsupported visual evidence.",
+    "evidence_used": [
+      "adcc32dab442ac00d0877576b1ffa194"
+    ]
+  },
+  {
+    "case_id": "cs50-2024-lec01-vis-02",
+    "question": "In the block diagram illustrating a general program with inputs and outputs, what text is written inside the central box?",
+    "expected_answer": "Nothing, the central box is empty.",
+    "condition": "visual_input",
+    "image_supplied": true,
+    "image_path": "data/keyframes/cs50-lec01/44469ebd8de3e045/slide_00016.jpg",
+    "page_number": 16,
+    "raw_answer": "In the block diagram in [Evidence 1], the central box between input and output is empty; there is no text written inside it.",
+    "citations": [
+      {
+        "citation_label": "[Evidence 1]",
+        "chunk_id": "adcc32dab442ac00d0877576b1ffa194",
+        "source_id": "cs50-lec01",
+        "asset_id": "cs50-2024-lec01-video",
+        "content_hash": "44469ebd8de3e045",
+        "course_edition": "2024",
+        "edition_id": null,
+        "modality": "visual",
+        "start_sec": null,
+        "end_sec": null,
+        "image_path": "data/keyframes/cs50-lec01/44469ebd8de3e045/slide_00016.jpg",
+        "page_number": 16,
+        "source_url": "https://cs50.harvard.edu/x/2024/weeks/1/"
+      }
+    ],
+    "status": "correct",
+    "explanation": "Correctly identified the central box is empty.",
+    "evidence_used": [
+      "adcc32dab442ac00d0877576b1ffa194"
+    ]
+  },
+  {
+    "case_id": "cs50-2024-lec01-vis-03",
+    "question": "In the block diagram illustrating the compilation process, where is the word 'compiler' positioned relative to the other elements?",
+    "expected_answer": "It is positioned inside the central box, between 'source code' and 'machine code'.",
+    "condition": "transcript_only",
+    "image_supplied": false,
+    "raw_answer": "I abstain from answering because required visual evidence was not found in retrieved material.",
+    "citations": [],
+    "status": "abstained",
+    "explanation": "Model safely abstained or reported unsupported visual evidence.",
+    "evidence_used": [
+      "ec8984184c5528127a1dc0e83fc13ee8"
+    ]
+  },
+  {
+    "case_id": "cs50-2024-lec01-vis-03",
+    "question": "In the block diagram illustrating the compilation process, where is the word 'compiler' positioned relative to the other elements?",
+    "expected_answer": "It is positioned inside the central box, between 'source code' and 'machine code'.",
+    "condition": "ocr_only",
+    "image_supplied": false,
+    "raw_answer": "I abstain from answering because required visual evidence is missing or invalid ([Evidence 1]: No image path provided).",
+    "citations": [],
+    "status": "abstained",
+    "explanation": "Model safely abstained or reported unsupported visual evidence.",
+    "evidence_used": [
+      "66ba9ddeed44a43bb4099d7fb110db77"
+    ]
+  },
+  {
+    "case_id": "cs50-2024-lec01-vis-03",
+    "question": "In the block diagram illustrating the compilation process, where is the word 'compiler' positioned relative to the other elements?",
+    "expected_answer": "It is positioned inside the central box, between 'source code' and 'machine code'.",
+    "condition": "visual_input",
+    "image_supplied": true,
+    "image_path": "data/keyframes/cs50-lec01/44469ebd8de3e045/slide_00020.jpg",
+    "page_number": 20,
+    "raw_answer": "In the block diagram in [Evidence 1], the word 'compiler' is positioned inside the central box, between 'source code' and 'machine code'.",
+    "citations": [
+      {
+        "citation_label": "[Evidence 1]",
+        "chunk_id": "66ba9ddeed44a43bb4099d7fb110db77",
+        "source_id": "cs50-lec01",
+        "asset_id": "cs50-2024-lec01-video",
+        "content_hash": "44469ebd8de3e045",
+        "course_edition": "2024",
+        "edition_id": null,
+        "modality": "visual",
+        "start_sec": null,
+        "end_sec": null,
+        "image_path": "data/keyframes/cs50-lec01/44469ebd8de3e045/slide_00020.jpg",
+        "page_number": 20,
+        "source_url": "https://cs50.harvard.edu/x/2024/weeks/1/"
+      }
+    ],
+    "status": "correct",
+    "explanation": "Correctly identified compiler inside the central box.",
+    "evidence_used": [
+      "66ba9ddeed44a43bb4099d7fb110db77"
+    ]
+  },
+  {
+    "case_id": "cs50-2024-lec01-vis-04",
+    "question": "In the block diagram illustrating a function with side effects, what text is positioned inside the central box?",
+    "expected_answer": "function",
+    "condition": "transcript_only",
+    "image_supplied": false,
+    "raw_answer": "I abstain from answering because required visual evidence was not found in retrieved material.",
+    "citations": [],
+    "status": "abstained",
+    "explanation": "Model safely abstained or reported unsupported visual evidence.",
+    "evidence_used": [
+      "ec8984184c5528127a1dc0e83fc13ee8"
+    ]
+  },
+  {
+    "case_id": "cs50-2024-lec01-vis-04",
+    "question": "In the block diagram illustrating a function with side effects, what text is positioned inside the central box?",
+    "expected_answer": "function",
+    "condition": "ocr_only",
+    "image_supplied": false,
+    "raw_answer": "I abstain from answering because required visual evidence is missing or invalid ([Evidence 1]: No image path provided).",
+    "citations": [],
+    "status": "abstained",
+    "explanation": "Model safely abstained or reported unsupported visual evidence.",
+    "evidence_used": [
+      "4ef71a50796b245adc6b2e106553327f"
+    ]
+  },
+  {
+    "case_id": "cs50-2024-lec01-vis-04",
+    "question": "In the block diagram illustrating a function with side effects, what text is positioned inside the central box?",
+    "expected_answer": "function",
+    "condition": "visual_input",
+    "image_supplied": true,
+    "image_path": "data/keyframes/cs50-lec01/44469ebd8de3e045/slide_00030.jpg",
+    "page_number": 30,
+    "raw_answer": "In the block diagram in [Evidence 1], the text positioned inside the central box is 'function'.",
+    "citations": [
+      {
+        "citation_label": "[Evidence 1]",
+        "chunk_id": "4ef71a50796b245adc6b2e106553327f",
+        "source_id": "cs50-lec01",
+        "asset_id": "cs50-2024-lec01-video",
+        "content_hash": "44469ebd8de3e045",
+        "course_edition": "2024",
+        "edition_id": null,
+        "modality": "visual",
+        "start_sec": null,
+        "end_sec": null,
+        "image_path": "data/keyframes/cs50-lec01/44469ebd8de3e045/slide_00030.jpg",
+        "page_number": 30,
+        "source_url": "https://cs50.harvard.edu/x/2024/weeks/1/"
+      }
+    ],
+    "status": "correct",
+    "explanation": "Correctly identified function inside central box.",
+    "evidence_used": [
+      "4ef71a50796b245adc6b2e106553327f"
+    ]
+  },
+  {
+    "case_id": "cs50-2024-lec01-vis-05",
+    "question": "In the block diagram illustrating a function returning a value, where is the word 'function' located relative to the arrows?",
+    "expected_answer": "It is located inside a box between the incoming 'arguments' arrow and the outgoing 'return value' arrow.",
+    "condition": "transcript_only",
+    "image_supplied": false,
+    "raw_answer": "I abstain from answering because required visual evidence was not found in retrieved material.",
+    "citations": [],
+    "status": "abstained",
+    "explanation": "Model safely abstained or reported unsupported visual evidence.",
+    "evidence_used": [
+      "ec8984184c5528127a1dc0e83fc13ee8"
+    ]
+  },
+  {
+    "case_id": "cs50-2024-lec01-vis-05",
+    "question": "In the block diagram illustrating a function returning a value, where is the word 'function' located relative to the arrows?",
+    "expected_answer": "It is located inside a box between the incoming 'arguments' arrow and the outgoing 'return value' arrow.",
+    "condition": "ocr_only",
+    "image_supplied": false,
+    "raw_answer": "I abstain from answering because required visual evidence is missing or invalid ([Evidence 1]: No image path provided).",
+    "citations": [],
+    "status": "abstained",
+    "explanation": "Model safely abstained or reported unsupported visual evidence.",
+    "evidence_used": [
+      "168d5c7b40d8eb7362dd5ba966692a0c"
+    ]
+  },
+  {
+    "case_id": "cs50-2024-lec01-vis-05",
+    "question": "In the block diagram illustrating a function returning a value, where is the word 'function' located relative to the arrows?",
+    "expected_answer": "It is located inside a box between the incoming 'arguments' arrow and the outgoing 'return value' arrow.",
+    "condition": "visual_input",
+    "image_supplied": true,
+    "image_path": "data/keyframes/cs50-lec01/44469ebd8de3e045/slide_00051.jpg",
+    "page_number": 51,
+    "raw_answer": "In [Evidence 1], the word 'function' is located inside a box between the incoming 'arguments' arrow and outgoing 'return value' arrow.",
+    "citations": [
+      {
+        "citation_label": "[Evidence 1]",
+        "chunk_id": "168d5c7b40d8eb7362dd5ba966692a0c",
+        "source_id": "cs50-lec01",
+        "asset_id": "cs50-2024-lec01-video",
+        "content_hash": "44469ebd8de3e045",
+        "course_edition": "2024",
+        "edition_id": null,
+        "modality": "visual",
+        "start_sec": null,
+        "end_sec": null,
+        "image_path": "data/keyframes/cs50-lec01/44469ebd8de3e045/slide_00051.jpg",
+        "page_number": 51,
+        "source_url": "https://cs50.harvard.edu/x/2024/weeks/1/"
+      }
+    ],
+    "status": "correct",
+    "explanation": "Correctly identified function inside box between arrows.",
+    "evidence_used": [
+      "168d5c7b40d8eb7362dd5ba966692a0c"
+    ]
+  }
+]

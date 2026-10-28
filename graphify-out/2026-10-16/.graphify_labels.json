@@ -1,0 +1,22 @@
+{
+  "0": "test_ingestion_version_safety.py",
+  "1": "scripts/ingest_official.py",
+  "2": "test_real_evidence.py",
+  "3": "test_vqa.py",
+  "4": "test_source_manifest.py",
+  "5": "test_pdf_rendering.py",
+  "6": "This Week Plan — Grounded Multimodal AI Tutor",
+  "7": "video_processor.py",
+  "8": "Files Changed",
+  "9": "init_db",
+  "10": "test_benchmark.py",
+  "11": "VisualPayload",
+  "12": "Real Public Lecture to Evidence Path",
+  "13": "M1 — Versioned Evidence Corpus",
+  "14": "Benchmark Dataset",
+  "15": "MockVisionAdapter",
+  "16": "OpenAIVisionAdapter",
+  "17": "Public Corpus Manifest & Provenance Model",
+  "18": "ingestion/__init__.py",
+  "19": "storage/__init__.py"
+}

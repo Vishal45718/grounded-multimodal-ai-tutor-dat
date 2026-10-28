@@ -1,0 +1,31 @@
+# Week 1–2 Requirements Audit Report
+
+| Requirement | Current status | Evidence in repository | Exact issue | Files involved |
+| --- | --- | --- | --- | --- |
+| 1. Real public corpus/source provenance | MISSING | `main.py` (lines 19-31), `README.md` (lines 76-84) | Repository lacks sample video files, public dataset download scripts, or source provenance metadata tracking. | `main.py`, `README.md` |
+| 2. Versioned evidence schema | PARTIAL | `storage/schema.sql` (lines 4-25), `storage/corpus_store.py` (lines 31-52), `ingestion/versioning.py` (lines 23-30) | `sources` table uses `source_id` as single PRIMARY KEY, causing `upsert_source` to overwrite version records instead of retaining source version history; schema metadata conflicts with dataclass definitions. | `storage/schema.sql`, `storage/corpus_store.py`, `ingestion/versioning.py` |
+| 3. Source/version/asset identity | PARTIAL | `ingestion/versioning.py` (lines 9-20), `ingestion/video_processor.py` (lines 21-37), `storage/schema.sql` (line 5) | Asset storage directories use plain video filenames rather than version/content-hash namespaced paths; schema lacks composite version identity. | `ingestion/versioning.py`, `ingestion/video_processor.py`, `storage/schema.sql` |
+| 4. Ingestion retry after failure | BROKEN | `main.py` (lines 28-32), `storage/corpus_store.py` (lines 31-52) | `upsert_source` registers the source in the database *before* extraction completes; pipeline failures leave the source registered, causing subsequent retries to skip ingestion. | `main.py`, `storage/corpus_store.py` |
+| 5. Active-version handling | BROKEN | `storage/corpus_store.py` (lines 55-65, 79-92) | `active_chunks()` filters only on `c.is_stale = 0 AND s.is_deprecated = 0` without checking `c.content_hash == s.content_hash`; `insert_chunks` unconditionally writes `is_stale = 0`, treating superseded version chunks as active. | `storage/corpus_store.py` |
+| 6. Rejection of delayed old-version writes | BROKEN | `storage/corpus_store.py` (lines 55-65) | `insert_chunks` performs no validation against the active `content_hash` of the source in the database, permitting delayed writes of superseded version chunks with `is_stale = 0`. | `storage/corpus_store.py` |
+| 7. Stable evidence IDs across rebuilds | BROKEN | `ingestion/chunker.py` (lines 59, 75) | `chunk_id` generation uses random `uuid.uuid4()`, producing non-deterministic chunk IDs across identical pipeline re-runs or rebuilds. | `ingestion/chunker.py` |
+| 8. Version-safe image/frame paths | BROKEN | `ingestion/video_processor.py` (lines 21-22, 36-38) | Frame and audio directories are constructed using only the base filename (`base`), causing new video versions of the same file to overwrite existing keyframes and audio files without version isolation. | `ingestion/video_processor.py` |
+| 9. Transcript chunk duration limit | BROKEN | `ingestion/chunker.py` (lines 38-52), `config.py` (line 15) | Single ASR segments exceeding `max_chunk_duration_sec` (e.g., 45s segments) are appended without internal splitting, violating the 30-second cap. | `ingestion/chunker.py`, `config.py` |
+| 10. Visual extraction failure handling | BROKEN | `ingestion/ocr.py` (lines 25-30) | `ocr_keyframes` catches all exceptions during Tesseract execution and silently suppresses them (`text = ""`), dropping failed frames without logging errors or tracking failure status. | `ingestion/ocr.py` |
+| 11. Source manifest | MISSING | `main.py` (lines 59-74), `README.md` (lines 76-84) | No source manifest schema, manifest file (`manifest.json`), or manifest loader exists in the repository. | `main.py`, `README.md` |
+| 12. Benchmark structure | MISSING | `README.md` (lines 111-114) | No benchmark dataset files, query/ground-truth pairs, or benchmark schemas exist in the codebase. | `README.md` |
+| 13. Evaluation harness structure | MISSING | `README.md` (lines 122-127) | No test suites, evaluation scripts, or automated harness exist to test retrieval performance or pipeline integrity. | `README.md` |
+| 14. Repository traceability/documentation | PARTIAL | `README.md` (lines 1-132), `dat-tutor-m1-README.md` (lines 1-132), `storage/schema.sql` (lines 4-25) | Documentation includes duplicate README files, claims untested feature behavior (e.g. smoke tests and version isolation), and mismatches the SQLite schema primary keys. | `README.md`, `dat-tutor-m1-README.md`, `storage/schema.sql` |
+
+## W2 priority order
+
+1. **Ingestion retry & transactional safety**: Defer source database registration/commit until audio extraction, ASR, OCR, and chunk storage succeed so failed attempts can be retried cleanly.
+2. **Active-version query safety & write rejection**: Update `active_chunks()` to enforce `c.content_hash == s.content_hash`, and reject or mark stale any chunk writes where `content_hash` does not match the current active source version.
+3. **Deterministic evidence IDs**: Replace `uuid.uuid4()` with deterministic hashing (combining `source_id`, `content_hash`, modality, and start/end time) so evidence IDs remain stable across identical rebuilds.
+4. **Version-isolated asset directory paths**: Include `content_hash` in keyframe and audio asset output directories (`data/keyframes/<source_id>/<content_hash>/`) to prevent cross-version asset collision.
+5. **Transcript chunk duration cap enforcement**: Implement sub-segment splitting for individual ASR segments exceeding `max_chunk_duration_sec` (30s).
+6. **Explicit visual extraction error handling**: Remove silent exception swallowing in OCR processing, adding explicit error logging, retry, or failure status tracking.
+7. **Versioned evidence schema refinement**: Update `storage/schema.sql` to support version history (e.g. composite primary key `(source_id, content_hash)`) without overwriting previous version records.
+8. **Source manifest implementation & corpus provenance**: Add structured source manifest files and loader utilities for tracking public video sources and edition provenance.
+9. **Benchmark & evaluation harness implementation**: Construct evaluation scripts and benchmark dataset definitions for testing retrieval accuracy and pipeline correctness.
+10. **Documentation cleanup**: Resolve duplicate README files and align documentation claims with the actual codebase implementation.
