@@ -14,6 +14,10 @@ class Config:
     min_chunk_duration_sec: float = 3.0
     max_chunk_duration_sec: float = 30.0
     manifest_path: str = os.environ.get("MANIFEST_PATH", "data/source_manifest.json")
+    vision_backend: str = os.environ.get("VISION_BACKEND", "mock")
+    vision_model: str = os.environ.get("VISION_MODEL", "gemini-1.5-flash")
+    max_vision_images: int = int(os.environ.get("MAX_VISION_IMAGES", "5"))
+
 
 
 CONFIG = Config()

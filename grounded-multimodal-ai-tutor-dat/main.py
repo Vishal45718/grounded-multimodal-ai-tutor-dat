@@ -20,6 +20,10 @@ from storage.corpus_store import deprecate_edition, init_db, insert_chunks, is_s
 def ingest(args):
     init_db()
 
+    if getattr(args, "use_official", False):
+        from scripts.ingest_official import ingest_official
+        return ingest_official(args)
+
     asset_id = getattr(args, "asset_id", None)
     manifest_record = None
     if asset_id:
@@ -94,9 +98,8 @@ def deprecate(args):
 
 def resolve_citation(args):
     init_db()
-    print(f"Resolving citation for chunk {args.chunk_id}...")
-    # Basic skeleton for resolving citations directly
-    pass
+    from scripts.ingest_official import resolve_citation as _resolve
+    _resolve(args.chunk_id)
 
 def ask_tutor(args):
     init_db()
@@ -114,7 +117,12 @@ def ask_tutor(args):
     print("\n--- Citations ---")
     for c in citations:
         if c['citation_label'] in answer:
-            print(f"{c['citation_label']}: Source {c['source_id']} @ {c['start_sec']}s - {c['end_sec']}s ({c['modality']})")
+            time_str = (
+                f"{c['start_sec']}s - {c['end_sec']}s"
+                if c.get('start_sec') is not None
+                else f"Slide Page {c.get('page_number', 'N/A')}"
+            )
+            print(f"{c['citation_label']}: Source {c['source_id']} @ {time_str} ({c['modality']})")
 
 def main():
     parser = argparse.ArgumentParser(description="M1 evidence-corpus ingestion CLI")

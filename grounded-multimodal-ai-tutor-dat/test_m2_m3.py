@@ -20,7 +20,14 @@ def main():
         sys.exit(1)
         
     print("Retrieving evidence and generating grounded answer (M3)...")
-    llm = OpenAI(model="gpt-4o-mini") if OpenAI else None
+    import os
+    llm = None
+    if OpenAI and os.environ.get("OPENAI_API_KEY"):
+        try:
+            llm = OpenAI(model="gpt-4o-mini")
+        except Exception:
+            llm = None
+
     try:
         answer, citations = generate_grounded_answer(args.query, retriever, llm)
     except Exception as e:
@@ -32,7 +39,12 @@ def main():
     print("\n--- Citations ---")
     for c in citations:
         if c['citation_label'] in answer:
-            print(f"{c['citation_label']}: Source {c['source_id']} @ {c['start_sec']}s - {c['end_sec']}s ({c['modality']})")
+            time_str = (
+                f"{c['start_sec']}s - {c['end_sec']}s"
+                if c.get('start_sec') is not None
+                else f"Slide Page {c.get('page_number', 'N/A')}"
+            )
+            print(f"{c['citation_label']}: Source {c['source_id']} @ {time_str} ({c['modality']})")
 
 if __name__ == "__main__":
     main()

@@ -26,6 +26,9 @@ class LearnerMemoryStore:
 
     @contextmanager
     def _connect(self):
+        import os
+        if self.db_path != ":memory:":
+            os.makedirs(os.path.dirname(self.db_path) or ".", exist_ok=True)
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         try:
