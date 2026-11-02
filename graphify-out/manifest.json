@@ -1536,14 +1536,14 @@
     "semantic_hash": ""
   },
   "benchmark/results/modality_evaluation_mock.json": {
-    "mtime": 1792090638.0836768,
-    "seen": 1792090740.964173,
+    "mtime": 1793642728.6189103,
+    "seen": 1793643392.802726,
     "ast_hash": "c38fff377b87da9928c38ac44decdb85",
     "semantic_hash": ""
   },
   "benchmark/results/perturbation_evaluation_mock.json": {
-    "mtime": 1792090638.0846279,
-    "seen": 1792090740.9641743,
+    "mtime": 1793642728.6205492,
+    "seen": 1793643392.8027277,
     "ast_hash": "867fcc5f32b7aab527c259512c75ffa6",
     "semantic_hash": ""
   },
@@ -1560,9 +1560,309 @@
     "semantic_hash": ""
   },
   "benchmark/results/summary_mock.md": {
-    "mtime": 1792090638.085022,
-    "seen": 1792090740.9649963,
+    "mtime": 1793642728.6206636,
+    "seen": 1793643392.803241,
     "ast_hash": "9d57d51e0e71868dd1fcfea928d37e82",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/benchmark/evaluate_modalities.py": {
+    "mtime": 1793339682.768378,
+    "seen": 1793643392.802835,
+    "ast_hash": "17ddfb28e8514a4c7fd6888d6e9131a6",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/benchmark/results/modality_results.json": {
+    "mtime": 1793339682.768378,
+    "seen": 1793643392.8028364,
+    "ast_hash": "aec450cdd293c5f6eabb3ccd0aaf16c0",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/benchmark/validate.py": {
+    "mtime": 1793339682.7686725,
+    "seen": 1793643392.8028376,
+    "ast_hash": "84ad4c77c39348ebadf66aec5b7e90c8",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/config.py": {
+    "mtime": 1793339682.7686725,
+    "seen": 1793643392.8028383,
+    "ast_hash": "061cc15dfa5642a057df33c0fdb25d0e",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/data/source_manifest.json": {
+    "mtime": 1793339682.7716985,
+    "seen": 1793643392.802839,
+    "ast_hash": "34e048b0a249682498ac45b85bb36659",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/generation/answer.py": {
+    "mtime": 1793339682.7726827,
+    "seen": 1793643392.8028398,
+    "ast_hash": "515a4b4e76deebcc7a5eed272c89ce95",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/generation/vqa.py": {
+    "mtime": 1793339682.7726827,
+    "seen": 1793643392.802841,
+    "ast_hash": "708800490e86451217e7853b4d4789c9",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/ingest_official.py": {
+    "mtime": 1793339682.7726827,
+    "seen": 1793643392.802842,
+    "ast_hash": "4da39d6fb9d8a508a36339d01c62564e",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/ingestion/__init__.py": {
+    "mtime": 1793339682.7726827,
+    "seen": 1793643392.8028424,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/ingestion/chunker.py": {
+    "mtime": 1793339682.7740002,
+    "seen": 1793643392.802843,
+    "ast_hash": "9c1334f1c339ef89ba998e696cc8b1bf",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/ingestion/manifest.py": {
+    "mtime": 1793339682.7740002,
+    "seen": 1793643392.8028436,
+    "ast_hash": "8a13aab3a5f0db7c0ccb95f3ae15da8d",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/ingestion/ocr.py": {
+    "mtime": 1793339682.7740002,
+    "seen": 1793643392.802845,
+    "ast_hash": "1a934d5d0d5bca66ea4c26e4092ff195",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/ingestion/transcriber.py": {
+    "mtime": 1793339682.7740002,
+    "seen": 1793643392.8028455,
+    "ast_hash": "6fafb0ba3006df9360742bbc22a3e5ff",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/ingestion/versioning.py": {
+    "mtime": 1793339682.7740002,
+    "seen": 1793643392.8028462,
+    "ast_hash": "2bc66b691a866207a962949c874b893d",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/ingestion/video_processor.py": {
+    "mtime": 1793339682.7740002,
+    "seen": 1793643392.8028467,
+    "ast_hash": "1d00faff14d3ce89c0ab14c23f14c5e0",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/main.py": {
+    "mtime": 1793339682.7740002,
+    "seen": 1793643392.8028474,
+    "ast_hash": "adc0c3a3d0232b5ccab2336bef68e42b",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/memory/__init__.py": {
+    "mtime": 1793339682.775,
+    "seen": 1793643392.8028486,
+    "ast_hash": "e0e4b47754b9fb0a3bdb1b3b8a22da8e",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/memory/models.py": {
+    "mtime": 1793339682.7754712,
+    "seen": 1793643392.8028495,
+    "ast_hash": "b7bc452cad30177f7679da67e82dfa1f",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/memory/policy.py": {
+    "mtime": 1793339682.7754712,
+    "seen": 1793643392.80285,
+    "ast_hash": "0760fe3ec08228d3abd320d20855f8d6",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/memory/store.py": {
+    "mtime": 1793339682.7754712,
+    "seen": 1793643392.8028507,
+    "ast_hash": "f0124135aa33eaa53aa6374917360377",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/retrieval/retriever.py": {
+    "mtime": 1793339682.7763913,
+    "seen": 1793643392.8028524,
+    "ast_hash": "de4e0c27c6bcffc7afad7a70476e3c69",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/scripts/ingest_official.py": {
+    "mtime": 1793339682.7768247,
+    "seen": 1793643392.802853,
+    "ast_hash": "df1951490ccbca66c2f81b735ebc3a04",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/storage/__init__.py": {
+    "mtime": 1793339682.7768247,
+    "seen": 1793643392.8028538,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/storage/corpus_store.py": {
+    "mtime": 1793339682.7775211,
+    "seen": 1793643392.8028545,
+    "ast_hash": "26e1c3cd03ac80eec42de3ac1cb4718f",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/test_m2_m3.py": {
+    "mtime": 1793339682.7775211,
+    "seen": 1793643392.8028557,
+    "ast_hash": "7aa84ec8d0ad801995dd42e154f7699c",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/tests/test_benchmark.py": {
+    "mtime": 1793339682.779,
+    "seen": 1793643392.8028564,
+    "ast_hash": "799ec7a15b95cfc3559a6804536bdde5",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/tests/test_ingestion_version_safety.py": {
+    "mtime": 1793339682.7800002,
+    "seen": 1793643392.802857,
+    "ast_hash": "1397f860aaa2b2f11cb5375828434664",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/tests/test_learner_memory.py": {
+    "mtime": 1793339682.7800002,
+    "seen": 1793643392.8028579,
+    "ast_hash": "9c5b89195b1ccb0b5b630d40bfd0a2e9",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/tests/test_modality_evaluation.py": {
+    "mtime": 1793339682.7800002,
+    "seen": 1793643392.8028588,
+    "ast_hash": "5da1fb31933116a79f493ba864853312",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/tests/test_ocr.py": {
+    "mtime": 1793339682.7800002,
+    "seen": 1793643392.8028598,
+    "ast_hash": "f84db51299f521368ad1a87df05d0133",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/tests/test_pdf_rendering.py": {
+    "mtime": 1793339682.7800002,
+    "seen": 1793643392.8028605,
+    "ast_hash": "071389f2e4b8308f749c8d40cd3357c9",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/tests/test_real_evidence.py": {
+    "mtime": 1793339682.7800002,
+    "seen": 1793643392.8028612,
+    "ast_hash": "2f5d3d5859d01505118a141ff85f13d6",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/tests/test_source_manifest.py": {
+    "mtime": 1793339682.7800002,
+    "seen": 1793643392.8028622,
+    "ast_hash": "a942d656c6a9922c617fbb5a82486628",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/tests/test_vqa.py": {
+    "mtime": 1793339682.7800002,
+    "seen": 1793643392.802863,
+    "ast_hash": "d603ddfb66245776cdc56cd79a59dbff",
+    "semantic_hash": ""
+  },
+  "memory/__init__.py": {
+    "mtime": 1793643270.7636716,
+    "seen": 1793643392.8030071,
+    "ast_hash": "db71f0af82821f4dcf2710b4ab4a73bb",
+    "semantic_hash": ""
+  },
+  "memory/models.py": {
+    "mtime": 1793643309.9182005,
+    "seen": 1793643392.8030083,
+    "ast_hash": "57699996177ac5852cd4f5e4ba0c9504",
+    "semantic_hash": ""
+  },
+  "tests/test_learner_memory_models.py": {
+    "mtime": 1793643358.9733834,
+    "seen": 1793643392.803119,
+    "ast_hash": "8fad5a898b646e7988442cae9b40bc41",
+    "semantic_hash": ""
+  },
+  "docs/BUG_TRACKER.md": {
+    "mtime": 1793643417.5101342,
+    "seen": 1793643438.6247149,
+    "ast_hash": "5fada8baf4333785100f452faa8fb8fc",
+    "semantic_hash": ""
+  },
+  "docs/MASTER_ROADMAP.md": {
+    "mtime": 1793643431.6932368,
+    "seen": 1793643438.6247168,
+    "ast_hash": "84fd66c5bf0cac457945c17746d4f102",
+    "semantic_hash": ""
+  },
+  "docs/PROGRESS_TRACKER.md": {
+    "mtime": 1793643405.8057947,
+    "seen": 1793643438.6247177,
+    "ast_hash": "49170e17ae7c0be250b293d29d6fb759",
+    "semantic_hash": ""
+  },
+  "docs/REPOSITORY_AUDIT.md": {
+    "mtime": 1793643021.1661842,
+    "seen": 1793643392.80329,
+    "ast_hash": "6b65c9cd8ddf0944797dd7553e6b1dd1",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/README.md": {
+    "mtime": 1793339682.767,
+    "seen": 1793643392.8033218,
+    "ast_hash": "b85a335c2763110dc9b91e43bca4d03b",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/benchmark/README.md": {
+    "mtime": 1793339682.767841,
+    "seen": 1793643392.8033237,
+    "ast_hash": "660445325745c4690f01b8bcef532dff",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/dat-tutor-m1-README.md": {
+    "mtime": 1793339682.7686725,
+    "seen": 1793643392.8033245,
+    "ast_hash": "bf5969f7cd98d414512e76fe49bbbbab",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/data/source_manifest.yaml": {
+    "mtime": 1793339682.7716985,
+    "seen": 1793643392.8033252,
+    "ast_hash": "56ae405d6eff2d92c3130ffd929c9020",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/docs/REAL_EVIDENCE_PATH.md": {
+    "mtime": 1793339682.772,
+    "seen": 1793643392.803326,
+    "ast_hash": "1234e8962d6dc126f2be0bd0c782503b",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/docs/W1_W2_AUDIT.md": {
+    "mtime": 1793339682.772,
+    "seen": 1793643392.803327,
+    "ast_hash": "7d4f5ce7f8a4ecd1cafe750d6f4933f5",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/requirements.txt": {
+    "mtime": 1793339682.7754712,
+    "seen": 1793643392.8033278,
+    "ast_hash": "6546ce93cdb136e3f10b5e07db53c366",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/benchmark/results/test_slide.jpg": {
+    "mtime": 1793339682.7686725,
+    "seen": 1793643392.8073683,
+    "ast_hash": "54e245d8b851d987ba7b66e1f2168ec2",
+    "semantic_hash": ""
+  },
+  "grounded-multimodal-ai-tutor-dat/benchmark/results/test_slide_swapped.jpg": {
+    "mtime": 1793339682.7686725,
+    "seen": 1793643392.8073692,
+    "ast_hash": "e91a2607b710ab74ec49ce3d4fa31682",
     "semantic_hash": ""
   }
 }

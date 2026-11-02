@@ -1,6 +1,6 @@
 # Progress Tracker — Grounded Multimodal AI Tutor
 
-**Baseline**: 74 / 74 pytest passing  
+**Baseline**: 162 / 162 pytest passing (74 regression + 88 memory unit tests)  
 **Active Milestone Focus**: Phase 1 (M5 Learner Memory & Retrieval Benchmarking)
 
 ---
@@ -9,7 +9,7 @@
 
 | Task ID | Task Description | Target File(s) | Status | Test / Proof |
 |:---|:---|:---|:---:|:---|
-| **P1.1** | Define Memory Data Models (`LearnerProfile`, `MemoryEntry`, `MasteryState`) | `memory/models.py` | ⏳ Pending | Unit tests |
+| **P1.1** | Define Memory Data Models (`LearnerProfile`, `MemoryEntry`, `MasteryState`, `LearnerCorrection`) | `memory/__init__.py`, `memory/models.py` | ✅ Completed | 88/88 passing (`tests/test_learner_memory_models.py`) |
 | **P1.2** | Implement Learner Memory Rules (Writing, Expiry/TTL, Correction, Deletion) | `memory/learner_memory.py` | ⏳ Pending | `test_learner_memory.py` |
 | **P1.3** | SQLite Persistence & Schema Migration for Memory & Audit Logs | `storage/schema.sql`, `storage/corpus_store.py` | ⏳ Pending | `test_memory_storage.py` |
 | **P1.4** | Wire Learner Memory into Generation Context (`ask_tutor`) | `generation/answer.py`, `main.py` | ⏳ Pending | E2E query test |

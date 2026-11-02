@@ -1,7 +1,7 @@
 # Master Roadmap: Grounded Multimodal AI Tutor
 
 **Status**: Active  
-**Repository Baseline**: 74 / 74 passing tests (`pytest tests/ -q`)  
+**Repository Baseline**: 162 / 162 passing tests (`pytest tests/ -q`)  
 **Tracking Documents**:
 - Tasks & Progress: [`docs/PROGRESS_TRACKER.md`](file:///home/jonsnow/Desktop/DAT_project/dat_project/docs/PROGRESS_TRACKER.md)
 - Bugs & Risks: [`docs/BUG_TRACKER.md`](file:///home/jonsnow/Desktop/DAT_project/dat_project/docs/BUG_TRACKER.md)
