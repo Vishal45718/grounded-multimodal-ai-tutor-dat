@@ -1,7 +1,8 @@
 # Progress Tracker — Grounded Multimodal AI Tutor
 
-**Baseline**: 162 / 162 pytest passing (74 regression + 88 memory unit tests)  
-**Active Milestone Focus**: Phase 1 (M5 Learner Memory & Retrieval Benchmarking)
+**Baseline**: 224 / 224 pytest passing (74 M4 regression + 88 M5.1 model tests + 62 M5.2 policy/engine tests)  
+**Active Milestone Focus**: Phase 1 (M5 Learner Memory & Retrieval Benchmarking)  
+**Last verified**: 2026-11-03 — `python3 -m pytest tests/ -v --tb=short` → 224 passed; `python3 benchmark/validate.py` → passed. M5 is **not** complete (persistence and generation integration remain).
 
 ---
 
@@ -10,7 +11,7 @@
 | Task ID | Task Description | Target File(s) | Status | Test / Proof |
 |:---|:---|:---|:---:|:---|
 | **P1.1** | Define Memory Data Models (`LearnerProfile`, `MemoryEntry`, `MasteryState`, `LearnerCorrection`) | `memory/__init__.py`, `memory/models.py` | ✅ Completed | 88/88 passing (`tests/test_learner_memory_models.py`) |
-| **P1.2** | Implement Learner Memory Rules (Writing, Expiry/TTL, Correction, Deletion) | `memory/learner_memory.py` | ⏳ Pending | `test_learner_memory.py` |
+| **P1.2** | Implement Learner Memory Policy & In-Memory Engine (M5.2: confidence, TTL, mastery, correction, deletion, learner context) | `memory/policy.py`, `memory/engine.py`, `memory/__init__.py` | ✅ Completed | 62 new tests; targeted 150/150 (`tests/test_learner_memory_policy.py`, `tests/test_learner_memory_engine.py`); full suite 224/224 |
 | **P1.3** | SQLite Persistence & Schema Migration for Memory & Audit Logs | `storage/schema.sql`, `storage/corpus_store.py` | ⏳ Pending | `test_memory_storage.py` |
 | **P1.4** | Wire Learner Memory into Generation Context (`ask_tutor`) | `generation/answer.py`, `main.py` | ⏳ Pending | E2E query test |
 | **P1.5** | Build Retrieval Comparison Benchmark (BM25 vs. Dense vs. Hybrid) | `benchmark/evaluate_retrieval.py` | ⏳ Pending | Hit@5 & Recall@5 report |

@@ -1,7 +1,8 @@
 # Master Roadmap: Grounded Multimodal AI Tutor
 
 **Status**: Active  
-**Repository Baseline**: 162 / 162 passing tests (`pytest tests/ -q`)  
+**Repository Baseline**: 224 / 224 passing tests (`pytest tests/ -q`, 2026-11-03)  
+**M5 status**: M5.1 models ✅, M5.2 policy & in-memory engine ✅. M5 **not complete** — persistence (P1.3) and generation wiring (P1.4) remain.  
 **Tracking Documents**:
 - Tasks & Progress: [`docs/PROGRESS_TRACKER.md`](file:///home/jonsnow/Desktop/DAT_project/dat_project/docs/PROGRESS_TRACKER.md)
 - Bugs & Risks: [`docs/BUG_TRACKER.md`](file:///home/jonsnow/Desktop/DAT_project/dat_project/docs/BUG_TRACKER.md)
@@ -51,7 +52,7 @@
 ## Summary of Phases and Owners
 
 1. **Phase 1: M5 Learner Memory + Retrieval Evaluation + Live Vision**
-   - **M5 Memory Module**: Design rules for writing, expiry/decay, corrections, and deletion.
+   - **M5 Memory Module**: M5.2 in-memory policy/engine is in place (`memory/policy.py`, `memory/engine.py`). Remaining: SQLite persistence and `generate_grounded_answer` integration. Do not treat learner context as corpus evidence.
    - **Retrieval Comparison**: BM25 vs Dense vs Hybrid evaluated on `Hit@5` and `Recall@5`.
    - **Live Vision Test**: Multi-modal verification with real rendered slide/frame assets.
 
