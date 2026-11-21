@@ -13,6 +13,16 @@ from io import StringIO
 from unittest.mock import patch
 from ingestion.manifest import SourceAssetRecord
 
+
+@pytest.fixture(autouse=True)
+def setup_test_db(tmp_path, monkeypatch):
+    """Use an isolated SQLite database for each test."""
+    db_file = str(tmp_path / "test_corpus.db")
+    monkeypatch.setattr(CONFIG, "corpus_db_path", db_file)
+    init_db()
+    return db_file
+
+
 @patch('ingestion.manifest.load_manifest')
 def test_manifest_resolves_configuration(mock_load_manifest):
     mock_load_manifest.return_value = [SourceAssetRecord(

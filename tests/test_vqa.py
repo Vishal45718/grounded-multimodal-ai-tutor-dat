@@ -259,8 +259,10 @@ def test_unknown_citation_labels_rejected(tmp_path):
     assert citations[0]["chunk_id"] == "c1"
 
 
-def test_pdf_citations_retain_unknown_time_bounds(tmp_path, capsys):
+def test_pdf_citations_retain_unknown_time_bounds(tmp_path, capsys, monkeypatch):
     """Test 7: PDF citations retain unknown video time bounds rather than inventing timestamps."""
+    db_file = str(tmp_path / "test_corpus.db")
+    monkeypatch.setattr(CONFIG, "corpus_db_path", db_file)
     init_db()
     img_file = str(tmp_path / "slide_00019.jpg")
     _create_dummy_jpeg(img_file)
