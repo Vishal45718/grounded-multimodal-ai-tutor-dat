@@ -106,26 +106,124 @@ def ask_tutor(args):
     from retrieval.retriever import TutorRetriever
     from generation.answer import generate_grounded_answer
     
-    print("Loading active chunks and building indices (M2)...")
-    retriever = TutorRetriever(use_dense=True, use_sparse=True)
+    use_rerank = getattr(args, "rerank", False)
+    require_vis = getattr(args, "require_visual", False)
+    print(f"Loading active chunks and building indices (M2, rerank={use_rerank})...")
+    retriever = TutorRetriever(use_dense=True, use_sparse=True, use_reranker=use_rerank)
     
-    print("Retrieving evidence and generating grounded answer (M3)...")
-    answer, citations = generate_grounded_answer(args.query, retriever)
+    print("Retrieving evidence and generating grounded answer (M3, M4, M6)...")
+    answer, citations = generate_grounded_answer(
+        args.query,
+        retriever,
+        require_visual=require_vis,
+        use_cache=not getattr(args, "no_cache", False),
+    )
 
     print("\n--- Answer ---")
     print(answer)
     print("\n--- Citations ---")
     for c in citations:
-        if c['citation_label'] in answer:
+        if c.get("citation_label", "") in answer:
             time_str = (
                 f"{c['start_sec']}s - {c['end_sec']}s"
-                if c.get('start_sec') is not None
+                if c.get("start_sec") is not None
                 else f"Slide Page {c.get('page_number', 'N/A')}"
             )
             print(f"{c['citation_label']}: Source {c['source_id']} @ {time_str} ({c['modality']})")
 
+
+def run_eval_cli(args):
+    from benchmark.run_eval import run_benchmark, print_scorecard
+    results = run_benchmark(
+        cases_path=args.cases,
+        mode=args.mode,
+        output_path=args.output,
+        top_k=args.top_k,
+        use_reranker=args.rerank,
+    )
+    print_scorecard(results)
+
+
+def run_characterization_cli(args):
+    from benchmark.characterize_performance import run_characterization
+    run_characterization(
+        cases_path=args.cases,
+        output_path=args.output,
+        top_k=args.top_k,
+    )
+
+
+def manage_memory(args):
+    from memory.store import LearnerMemoryStore
+    from memory.models import LearnerMemoryItem
+    from config import CONFIG
+    import time
+    
+    store = LearnerMemoryStore(db_path=CONFIG.memory_db_path)
+    action = args.action.lower()
+
+    if action == "list":
+        if not args.learner_id:
+            print("Error: --learner-id is required to list memories.")
+            return
+        mems = store.get_active_memories(args.learner_id)
+        print(f"\nActive memories for learner '{args.learner_id}' ({len(mems)}):")
+        for m in mems:
+            print(f"  [{m.item_id}] Type: {m.memory_type} | Topic: {m.topic} | Conf: {m.confidence:.2f}")
+            print(f"    Content: {m.content}")
+            if m.history:
+                print(f"    History: {len(m.history)} revisions")
+
+    elif action == "write":
+        if not args.learner_id or not args.topic or not args.content:
+            print("Error: --learner-id, --topic, and --content are required to write memory.")
+            return
+        item = LearnerMemoryItem(
+            item_id=f"mem_{int(time.time()*1000)}",
+            learner_id=args.learner_id,
+            memory_type=getattr(args, "type", "goal") or "goal",
+            topic=args.topic,
+            content=args.content,
+            confidence=float(getattr(args, "confidence", 1.0) or 1.0),
+            is_confirmed=True,
+            status="active",
+            provenance_turn_id=f"cli_{int(time.time())}",
+            created_at=time.time(),
+            updated_at=time.time(),
+        )
+        success, committed, msg = store.write_memory(item, force=True)
+        print(f"Write memory: {msg} (ID: {committed.item_id if committed else 'N/A'})")
+
+    elif action == "correct":
+        if not args.item_id or not args.content:
+            print("Error: --item-id and --content are required to correct memory.")
+            return
+        updated = store.correct_memory(args.item_id, args.content, reason=getattr(args, "reason", "Learner correction"))
+        if updated:
+            print(f"Corrected memory [{args.item_id}]: New content: '{updated.content}' (Revisions: {len(updated.history)})")
+        else:
+            print(f"Error: Memory item [{args.item_id}] not found.")
+
+    elif action == "delete":
+        if not args.item_id:
+            print("Error: --item-id is required to delete memory.")
+            return
+        success = store.delete_memory(args.item_id)
+        if success:
+            print(f"Deleted memory [{args.item_id}] immediately (status='deleted').")
+        else:
+            print(f"Error: Memory item [{args.item_id}] not found.")
+
+    elif action == "purge":
+        if not args.learner_id:
+            print("Error: --learner-id is required to purge learner.")
+            return
+        count = store.purge_learner(args.learner_id)
+        print(f"Purged all {count} memory records for learner '{args.learner_id}'.")
+
+
 def main():
-    parser = argparse.ArgumentParser(description="M1 evidence-corpus ingestion CLI")
+    parser = argparse.ArgumentParser(description="Grounded Multimodal AI Tutor CLI (M1 - M8)")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_ingest = sub.add_parser("ingest", help="Ingest one lecture video")
@@ -148,7 +246,35 @@ def main():
 
     p_query = sub.add_parser("query", help="Ask the tutor a question (M2 & M3)")
     p_query.add_argument("--query", required=True, help="Question to ask")
+    p_query.add_argument("--require-visual", action="store_true", help="Explicitly require visual evidence (M4)")
+    p_query.add_argument("--rerank", action="store_true", help="Apply neural/lexical reranking layer (M8)")
+    p_query.add_argument("--no-cache", action="store_true", help="Bypass response cache")
     p_query.set_defaults(func=ask_tutor)
+
+    p_mem = sub.add_parser("memory", help="Inspect, correct, or delete learner memory (M5)")
+    p_mem.add_argument("--action", required=True, choices=["list", "write", "correct", "delete", "purge"])
+    p_mem.add_argument("--learner-id", default=None, help="Learner ID")
+    p_mem.add_argument("--item-id", default=None, help="Memory Item ID")
+    p_mem.add_argument("--type", default="goal", choices=["goal", "mastery", "misconception", "preference"])
+    p_mem.add_argument("--topic", default=None, help="Memory topic")
+    p_mem.add_argument("--content", default=None, help="Memory content")
+    p_mem.add_argument("--confidence", type=float, default=1.0)
+    p_mem.add_argument("--reason", default="Learner correction")
+    p_mem.set_defaults(func=manage_memory)
+
+    p_eval = sub.add_parser("eval", help="Run automated evaluation and adversarial red team harness (M7)")
+    p_eval.add_argument("--cases", default="benchmark/cases_60.jsonl", help="Benchmark cases file")
+    p_eval.add_argument("--mode", default="mock", choices=["mock", "live"], help="Execution mode")
+    p_eval.add_argument("--output", default="benchmark/results/evaluation_report.json", help="Output report path")
+    p_eval.add_argument("--top-k", type=int, default=5, help="Retrieval depth")
+    p_eval.add_argument("--rerank", action="store_true", help="Enable reranker")
+    p_eval.set_defaults(func=run_eval_cli)
+
+    p_char = sub.add_parser("characterize", help="Run performance characterization across configurations (M8)")
+    p_char.add_argument("--cases", default="benchmark/cases_60.jsonl", help="Benchmark cases file")
+    p_char.add_argument("--output", default="benchmark/results/performance_characterization.json", help="Output path")
+    p_char.add_argument("--top-k", type=int, default=5, help="Retrieval depth")
+    p_char.set_defaults(func=run_characterization_cli)
 
     args = parser.parse_args()
     args.func(args)
