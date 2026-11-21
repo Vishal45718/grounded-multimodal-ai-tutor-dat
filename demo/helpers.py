@@ -28,6 +28,11 @@ from memory.store import LearnerMemoryStore
 # Default demo database path (isolated from production learner_memory.db)
 DEFAULT_DEMO_MEMORY_DB = "data/demo_learner_memory.db"
 
+# Demo corpus DB path (isolated from production data/corpus.db)
+DEMO_CORPUS_DB = "data/demo_corpus.db"
+# Upload storage root
+DEMO_UPLOADS_DIR = "data/demo_uploads"
+
 # Permitted image file extensions for media serving
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
@@ -491,3 +496,141 @@ def purge_learner_memory_items(
         return store.purge_learner(learner_id)
     finally:
         store.close()
+
+
+# ---------------------------------------------------------------------------
+# Video Media Path Validation (Demo Uploads)
+# ---------------------------------------------------------------------------
+
+ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".mkv"}
+
+
+def validate_video_serve_path(
+    path: Optional[str],
+    uploads_dir: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Validate that a video path is safely inside DEMO_UPLOADS_DIR.
+
+    Returns a dict with keys: valid, exists, path, resolved_path, error.
+    """
+    if not path or not path.strip():
+        return {"valid": False, "exists": False, "path": "", "resolved_path": None,
+                "error": "No video path provided."}
+
+    clean = path.strip()
+    root = Path(os.getcwd()).resolve()
+
+    # Resolve absolute or relative path
+    target = Path(clean).resolve() if os.path.isabs(clean) else (root / clean).resolve()
+
+    # Extension check
+    ext = target.suffix.lower()
+    if ext not in ALLOWED_VIDEO_EXTENSIONS:
+        return {
+            "valid": False, "exists": False, "path": clean,
+            "resolved_path": str(target),
+            "error": f"Invalid video extension '{ext}'. Only {sorted(ALLOWED_VIDEO_EXTENSIONS)} are allowed.",
+        }
+
+    # Allowed directory: DEMO_UPLOADS_DIR and system temp (for tests)
+    if uploads_dir:
+        base_uploads = Path(uploads_dir).resolve() if os.path.isabs(uploads_dir) else (root / uploads_dir).resolve()
+        allowed = [base_uploads]
+    else:
+        base_uploads = (root / DEMO_UPLOADS_DIR).resolve()
+        allowed = [base_uploads, Path(tempfile.gettempdir()).resolve()]
+
+    is_safe = any(
+        _is_relative_to(target, ad) for ad in allowed
+    )
+    if not is_safe:
+        return {
+            "valid": False, "exists": False, "path": clean,
+            "resolved_path": str(target),
+            "error": "Video path escapes authorized uploads directory.",
+        }
+
+    # Symlink check
+    try:
+        real = target.resolve(strict=False)
+        if not any(_is_relative_to(real, ad) for ad in allowed):
+            return {
+                "valid": False, "exists": False, "path": clean,
+                "resolved_path": str(target),
+                "error": "Symlink escapes authorized uploads directory.",
+            }
+    except Exception:
+        pass
+
+    exists = target.is_file()
+    return {
+        "valid": True,
+        "exists": exists,
+        "path": clean,
+        "resolved_path": str(target),
+        "error": None if exists else f"Video file not found on disk: {clean}",
+    }
+
+
+def _is_relative_to(child: Path, parent: Path) -> bool:
+    """Python 3.9+ has Path.is_relative_to; support older versions too."""
+    try:
+        child.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Demo Corpus Query (Offline BM25 over uploaded videos)
+# ---------------------------------------------------------------------------
+
+def run_demo_corpus_query(
+    query: str,
+    top_k: int = 5,
+    source_id: Optional[str] = None,
+    demo_corpus_db: str = DEMO_CORPUS_DB,
+    base_dir: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Execute an offline BM25 query over the demo corpus and return
+    structured results with retrieval scores for RAG inspection.
+
+    Returns a dict with:
+        query, results (list of chunk dicts with score/rank/text/timestamps),
+        total_retrieved, corpus_db, source_id_filter
+    """
+    from demo.upload_ingest import DemoCorpusStore, DemoRetriever
+
+    store = DemoCorpusStore(db_path=demo_corpus_db)
+    retriever = DemoRetriever(demo_corpus_db=demo_corpus_db, source_id=source_id)
+
+    nodes = retriever.retrieve(query, top_k=top_k)
+
+    results = []
+    for rank, node in enumerate(nodes, start=1):
+        meta = node.metadata if hasattr(node, "metadata") else {}
+        start_sec = meta.get("start_sec")
+        end_sec = meta.get("end_sec")
+        time_bounds = format_citation_time_bounds(start_sec, end_sec, page_number=meta.get("page_number"))
+        results.append({
+            "rank": rank,
+            "score": round(getattr(node, "score", 0.0), 4),
+            "chunk_id": meta.get("chunk_id", ""),
+            "source_id": meta.get("source_id", ""),
+            "modality": meta.get("modality", ""),
+            "start_sec": start_sec,
+            "end_sec": end_sec,
+            "page_number": meta.get("page_number"),
+            "image_path": meta.get("image_path"),
+            "time_bounds_str": time_bounds,
+            "text": node.text or node.get_content() if hasattr(node, "get_content") else (node.text or ""),
+        })
+
+    return {
+        "query": query,
+        "results": results,
+        "total_retrieved": len(results),
+        "corpus_db": demo_corpus_db,
+        "source_id_filter": source_id,
+        "chunk_count": retriever.chunk_count(),
+    }

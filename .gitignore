@@ -5,3 +5,5 @@ __pycache__/
 .backups/
 .pytest_cache/
 data/demo_learner_memory*
+data/demo_uploads/
+data/demo_corpus*

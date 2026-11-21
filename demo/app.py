@@ -6,29 +6,45 @@ Provides a local interactive web interface for:
    and visual slide keyframes.
 3. Live learner memory inspector with isolated storage, live preview of
    pedagogical styling, and full CRUD controls (Add, Correct, Delete, Purge).
-4. Hardened path containment, database targeting protection, and XSS safety.
+4. Upload Video → Offline Ingest → Query & Inspect RAG tab (zero API keys).
+5. Hardened path containment, database targeting protection, and XSS safety.
 """
 from __future__ import annotations
 
 import os
+import shutil
+import tempfile
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from demo.helpers import (
+    ALLOWED_VIDEO_EXTENSIONS,
     DEFAULT_DEMO_MEMORY_DB,
+    DEMO_CORPUS_DB,
+    DEMO_UPLOADS_DIR,
     add_learner_memory_item,
     correct_learner_memory_item,
     delete_learner_memory_item,
     detect_backend_status,
     get_learner_memory_data,
     purge_learner_memory_items,
+    run_demo_corpus_query,
     run_tutor_query,
     validate_demo_db_path,
     validate_media_path,
+    validate_video_serve_path,
+)
+from demo.upload_ingest import (
+    MAX_VIDEO_BYTES,
+    ALLOWED_TRANSCRIPT_EXTENSIONS,
+    ALLOWED_SLIDES_EXTENSIONS,
+    DemoCorpusStore,
+    ingest_uploaded_video,
+    sanitize_filename,
 )
 
 app = FastAPI(
@@ -237,6 +253,182 @@ def api_media(path: str = Query(..., min_length=1)):
         media_type = "image/webp"
 
     return FileResponse(resolved, media_type=media_type)
+
+
+# ---------------------------------------------------------------------------
+# Video Media Serving (Demo Uploads — Range-request ready via FileResponse)
+# ---------------------------------------------------------------------------
+
+@app.get("/media/video")
+def api_media_video(path: str = Query(..., min_length=1)):
+    """Safely serve uploaded video files with strict path containment.
+
+    Only allows files inside DEMO_UPLOADS_DIR. Supports HTTP Range requests
+    via FastAPI's FileResponse so HTML5 <video> seeking works correctly.
+    """
+    val = validate_video_serve_path(path)
+    if not val["valid"]:
+        raise HTTPException(status_code=400, detail=val.get("error") or "Invalid video path.")
+    if not val["exists"]:
+        raise HTTPException(status_code=404, detail=val.get("error") or "Video file not found.")
+
+    resolved = val["resolved_path"]
+    ext = Path(resolved).suffix.lower()
+    media_type_map = {
+        ".mp4": "video/mp4",
+        ".webm": "video/webm",
+        ".mov": "video/quicktime",
+        ".mkv": "video/x-matroska",
+    }
+    media_type = media_type_map.get(ext, "video/mp4")
+    return FileResponse(resolved, media_type=media_type)
+
+
+# ---------------------------------------------------------------------------
+# Upload & Ingestion Endpoints
+# ---------------------------------------------------------------------------
+
+class DemoQueryRequest(BaseModel):
+    query: str = Field(..., min_length=1)
+    top_k: int = Field(5, ge=1, le=20)
+    source_id: Optional[str] = Field(None)
+    demo_corpus_db: Optional[str] = Field(None)
+
+
+@app.post("/api/upload")
+async def api_upload(
+    video: UploadFile = File(...),
+    transcript: Optional[UploadFile] = File(None),
+    slides_pdf: Optional[UploadFile] = File(None),
+    title: Optional[str] = Form(None),
+) -> Dict[str, Any]:
+    """Accept a video upload (+ optional .vtt/.srt/.txt transcript and PDF slides)
+    and ingest into the isolated data/demo_corpus.db.
+
+    Returns an ingestion report with chunk counts and any capability warnings.
+    """
+    # Validate video extension and size
+    video_ext = Path(video.filename or "").suffix.lower()
+    if video_ext not in ALLOWED_VIDEO_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Video must be one of {sorted(ALLOWED_VIDEO_EXTENSIONS)}. Got '{video_ext}'.",
+        )
+
+    # Validate optional transcript extension
+    if transcript and transcript.filename:
+        tr_ext = Path(transcript.filename).suffix.lower()
+        if tr_ext not in ALLOWED_TRANSCRIPT_EXTENSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Transcript must be one of {sorted(ALLOWED_TRANSCRIPT_EXTENSIONS)}. Got '{tr_ext}'.",
+            )
+
+    # Validate optional PDF extension
+    if slides_pdf and slides_pdf.filename:
+        pdf_ext = Path(slides_pdf.filename).suffix.lower()
+        if pdf_ext not in ALLOWED_SLIDES_EXTENSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Slides must be a PDF. Got '{pdf_ext}'.",
+            )
+
+    stem = sanitize_filename(video.filename or "upload")
+    effective_title = (title or "").strip() or stem.replace("_", " ").title()
+
+    # Persist to uploads dir
+    os.makedirs(DEMO_UPLOADS_DIR, exist_ok=True)
+    video_dest = os.path.join(DEMO_UPLOADS_DIR, f"{stem}{video_ext}")
+
+    # Read video and enforce size limit
+    video_bytes = await video.read()
+    if len(video_bytes) > MAX_VIDEO_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Video exceeds maximum allowed size of {MAX_VIDEO_BYTES // 1024 // 1024} MB.",
+        )
+    with open(video_dest, "wb") as f:
+        f.write(video_bytes)
+
+    transcript_path: Optional[str] = None
+    slides_pdf_path: Optional[str] = None
+
+    if transcript and transcript.filename:
+        tr_ext = Path(transcript.filename).suffix.lower()
+        transcript_dest = os.path.join(DEMO_UPLOADS_DIR, f"{stem}_transcript{tr_ext}")
+        transcript_bytes = await transcript.read()
+        with open(transcript_dest, "wb") as f:
+            f.write(transcript_bytes)
+        transcript_path = transcript_dest
+
+    if slides_pdf and slides_pdf.filename:
+        pdf_dest = os.path.join(DEMO_UPLOADS_DIR, f"{stem}_slides.pdf")
+        pdf_bytes = await slides_pdf.read()
+        with open(pdf_dest, "wb") as f:
+            f.write(pdf_bytes)
+        slides_pdf_path = pdf_dest
+
+    try:
+        report = ingest_uploaded_video(
+            video_path=video_dest,
+            title=effective_title,
+            transcript_path=transcript_path,
+            slides_pdf_path=slides_pdf_path,
+            uploads_dir=DEMO_UPLOADS_DIR,
+            demo_corpus_db=DEMO_CORPUS_DB,
+        )
+        return report
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Ingestion failed: {exc}")
+
+
+@app.get("/api/uploads")
+def api_list_uploads() -> Dict[str, Any]:
+    """List all ingested demo videos with chunk counts."""
+    try:
+        store = DemoCorpusStore(db_path=DEMO_CORPUS_DB)
+        sources = store.list_sources()
+        return {"sources": sources, "count": len(sources), "demo_corpus_db": DEMO_CORPUS_DB}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.delete("/api/uploads")
+def api_clear_uploads() -> Dict[str, Any]:
+    """Clear all ingested demo data (chunks + sources from demo_corpus.db
+    and all files under data/demo_uploads/). Production databases are untouched.
+    """
+    try:
+        if os.path.exists(DEMO_CORPUS_DB):
+            store = DemoCorpusStore(db_path=DEMO_CORPUS_DB)
+            store.clear_all()
+
+        if os.path.isdir(DEMO_UPLOADS_DIR):
+            shutil.rmtree(DEMO_UPLOADS_DIR)
+            os.makedirs(DEMO_UPLOADS_DIR, exist_ok=True)
+
+        return {"cleared": True, "demo_corpus_db": DEMO_CORPUS_DB, "uploads_dir": DEMO_UPLOADS_DIR}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/demo/query")
+def api_demo_corpus_query(req: DemoQueryRequest) -> Dict[str, Any]:
+    """Offline BM25 query over the demo corpus for RAG inspection.
+
+    Returns ranked chunks with retrieval scores, timestamps, and full text
+    so users can verify BM25 retrieval quality without any API key.
+    """
+    effective_db = req.demo_corpus_db or DEMO_CORPUS_DB
+    try:
+        return run_demo_corpus_query(
+            query=req.query,
+            top_k=req.top_k,
+            source_id=req.source_id or None,
+            demo_corpus_db=effective_db,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 # ----------------------------------------------------------------------
@@ -572,6 +764,23 @@ _HTML_PAGE = """<!DOCTYPE html>
         </div>
       </div>
 
+      <div>
+        <h2>Corpus Selector</h2>
+        <div class="form-group">
+          <label>Query Corpus</label>
+          <select id="corpus-selector">
+            <option value="preloaded">📚 Pre-loaded CS50 Corpus</option>
+            <option value="demo">📤 Uploaded Videos (Offline RAG)</option>
+          </select>
+        </div>
+        <div id="demo-source-filter-group" class="form-group" style="display:none;">
+          <label>Filter by Video</label>
+          <select id="demo-source-filter">
+            <option value="">All uploaded videos</option>
+          </select>
+        </div>
+      </div>
+
       <div style="margin-top:auto; font-size:0.75rem; color:var(--text-muted);">
         DAT Tutor M1-M8 Architecture &middot; Offline Safe
       </div>
@@ -579,8 +788,83 @@ _HTML_PAGE = """<!DOCTYPE html>
 
     <main>
       <div class="tabs">
-        <button class="tab-btn active" onclick="switchTab('query-tab', this)">🔍 Tutor Query & Evidence</button>
+        <button class="tab-btn active" onclick="switchTab('query-tab', this)">🔍 Tutor Query &amp; Evidence</button>
+        <button class="tab-btn" onclick="switchTab('upload-tab', this)">📤 Upload Video</button>
         <button class="tab-btn" onclick="switchTab('memory-tab', this)">🧠 Learner Memory Inspector</button>
+      </div>
+
+      <!-- TAB: UPLOAD VIDEO -->
+      <div id="upload-tab" class="tab-content">
+        <div class="card">
+          <h3>📤 Upload Video for Offline RAG Ingestion</h3>
+          <p style="font-size:0.875rem; color:var(--text-muted); margin-bottom:16px;">
+            Upload a lecture video (MP4/WebM/MOV/MKV) with an optional transcript (.vtt/.srt/.txt) or slides (.pdf).
+            Chunks are stored in <code>data/demo_corpus.db</code> — never in the production CS50 corpus.
+            Works 100% offline (no API keys needed).
+          </p>
+          <form id="upload-form" onsubmit="submitUpload(event)">
+            <div class="form-group">
+              <label>Video File (.mp4 / .webm / .mov / .mkv, max 250 MB)</label>
+              <input type="file" id="video-file" accept=".mp4,.webm,.mov,.mkv" required style="color:var(--text);">
+            </div>
+            <div class="form-group">
+              <label>Transcript (optional: .vtt / .srt / .txt for speech search)</label>
+              <input type="file" id="transcript-file" accept=".vtt,.srt,.txt" style="color:var(--text);">
+            </div>
+            <div class="form-group">
+              <label>Slides PDF (optional, requires PyMuPDF)</label>
+              <input type="file" id="slides-file" accept=".pdf" style="color:var(--text);">
+            </div>
+            <div class="form-group">
+              <label>Title (optional — defaults to filename)</label>
+              <input type="text" id="upload-title" placeholder="e.g. My Lecture on Pointers">
+            </div>
+            <button type="submit" class="btn" id="upload-btn">⬆️ Upload &amp; Ingest</button>
+          </form>
+          <div id="upload-progress" style="display:none; margin-top:16px; color:var(--warning);">
+            ⏳ Uploading and ingesting... (keyframe extraction may take a moment)
+          </div>
+          <div id="upload-result" style="display:none; margin-top:16px;"></div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+            <h3>Ingested Demo Videos</h3>
+            <div style="display:flex; gap:8px;">
+              <button class="btn btn-secondary" onclick="loadUploadedVideos()">🔄 Refresh</button>
+              <button class="btn btn-danger" onclick="clearDemoCorpus()">🗑️ Clear All</button>
+            </div>
+          </div>
+          <div id="uploads-list"><p style="color:var(--text-muted);">Loading...</p></div>
+        </div>
+
+        <div class="card">
+          <h3>🔎 Offline RAG Inspector — Query Uploaded Video</h3>
+          <p style="font-size:0.875rem; color:var(--text-muted); margin-bottom:12px;">
+            Run an offline BM25 retrieval query over your uploaded video corpus. No API key needed.
+            Inspect retrieval scores, ranks, timestamps, and full text to verify RAG quality.
+          </p>
+          <div id="video-player-container" style="display:none; margin-bottom:16px;">
+            <video id="demo-video-player" controls style="width:100%; border-radius:6px; background:#000; border:1px solid var(--card-border);">
+              Your browser does not support HTML5 video.
+            </video>
+            <p id="video-player-label" style="font-size:0.8rem; color:var(--text-muted); margin-top:6px;"></p>
+          </div>
+          <div class="form-group">
+            <label>Query</label>
+            <textarea id="rag-query-input" rows="2" placeholder="e.g. What is explained about memory allocation?"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Filter by source (optional)</label>
+            <input type="text" id="rag-source-filter" placeholder="e.g. demo-my_lecture">
+          </div>
+          <div class="form-group">
+            <label>Top K: <span id="rag-top-k-val">5</span></label>
+            <input type="range" id="rag-top-k-slider" min="1" max="20" value="5" oninput="document.getElementById('rag-top-k-val').textContent = this.value">
+          </div>
+          <button class="btn" onclick="submitRagQuery()">🔍 Inspect Retrieval</button>
+          <div id="rag-result-container" style="margin-top:20px; display:none;"></div>
+        </div>
       </div>
 
       <!-- TAB 1: QUERY & EVIDENCE -->
@@ -740,6 +1024,8 @@ _HTML_PAGE = """<!DOCTYPE html>
       btn.classList.add('active');
       if (tabId === 'memory-tab') {
         loadMemoryData();
+      } else if (tabId === 'upload-tab') {
+        loadUploadedVideos();
       }
     }
 
@@ -1091,6 +1377,206 @@ _HTML_PAGE = """<!DOCTYPE html>
         loadMemoryData();
       } catch (err) {
         alert('Purge failed: ' + err.message);
+      }
+    }
+
+    // Upload tab & Demo RAG Player state & functions
+    let currentDemoVideoPath = null;
+
+    function playDemoVideo(path, title) {
+      currentDemoVideoPath = path;
+      const player = document.getElementById('demo-video-player');
+      const container = document.getElementById('video-player-container');
+      const label = document.getElementById('video-player-label');
+      player.src = '/media/video?path=' + encodeURIComponent(path);
+      label.textContent = 'Playing: ' + (title || path);
+      container.style.display = 'block';
+      player.load();
+      player.play().catch(() => {});
+    }
+
+    function seekDemoVideo(startSec) {
+      const player = document.getElementById('demo-video-player');
+      const container = document.getElementById('video-player-container');
+      if (!player.src && !currentDemoVideoPath) {
+        alert('No video currently loaded in player.');
+        return;
+      }
+      container.style.display = 'block';
+      player.currentTime = startSec;
+      player.play().catch(() => {});
+      player.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    async function submitUpload(event) {
+      event.preventDefault();
+      const videoFile = document.getElementById('video-file').files[0];
+      if (!videoFile) return;
+      const uploadBtn = document.getElementById('upload-btn');
+      const progress = document.getElementById('upload-progress');
+      const result = document.getElementById('upload-result');
+      uploadBtn.disabled = true;
+      progress.style.display = 'block';
+      result.style.display = 'none';
+
+      const fd = new FormData();
+      fd.append('video', videoFile);
+      const tr = document.getElementById('transcript-file').files[0];
+      if (tr) fd.append('transcript', tr);
+      const pdf = document.getElementById('slides-file').files[0];
+      if (pdf) fd.append('slides_pdf', pdf);
+      const title = document.getElementById('upload-title').value.trim();
+      if (title) fd.append('title', title);
+
+      try {
+        const res = await fetch('/api/upload', { method: 'POST', body: fd });
+        const data = await res.json();
+        result.style.display = 'block';
+        result.replaceChildren();
+        if (!res.ok) {
+          const errDiv = document.createElement('div');
+          errDiv.style.color = 'var(--danger)';
+          errDiv.textContent = '❌ Upload failed: ' + (data.detail || 'Unknown error');
+          result.appendChild(errDiv);
+        } else {
+          const info = document.createElement('div');
+          info.className = 'pedagogical-banner';
+          const p = document.createElement('p');
+          p.textContent = '✅ Ingested: ' + data.title + ' (' + data.audio_chunks + ' audio + ' + data.visual_chunks + ' visual chunks, total ' + data.total_chunks + ')';
+          info.appendChild(p);
+          if (data.video_path) {
+            playDemoVideo(data.video_path, data.title);
+          }
+          if (data.warnings && data.warnings.length > 0) {
+            data.warnings.forEach(w => {
+              const wp = document.createElement('p');
+              wp.textContent = '⚠️ ' + w;
+              info.appendChild(wp);
+            });
+          }
+          result.appendChild(info);
+          loadUploadedVideos();
+        }
+      } catch (err) {
+        result.style.display = 'block';
+        result.textContent = '❌ ' + err.message;
+      } finally {
+        uploadBtn.disabled = false;
+        progress.style.display = 'none';
+      }
+    }
+
+    async function loadUploadedVideos() {
+      const list = document.getElementById('uploads-list');
+      if (!list) return;
+      try {
+        const res = await fetch('/api/uploads');
+        const data = await res.json();
+        list.replaceChildren();
+        if (!data.sources || data.sources.length === 0) {
+          const p = document.createElement('p');
+          p.style.color = 'var(--text-muted)';
+          p.textContent = 'No videos ingested yet. Upload one above.';
+          list.appendChild(p);
+          return;
+        }
+        data.sources.forEach(s => {
+          const row = document.createElement('div');
+          row.style.cssText = 'padding:12px; border:1px solid var(--card-border); border-radius:6px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;';
+          const info = document.createElement('div');
+          const title = document.createElement('strong');
+          title.textContent = s.title;
+          const meta = document.createElement('div');
+          meta.style.cssText = 'font-size:0.8rem; color:var(--text-muted); margin-top:4px;';
+          const codeId = document.createElement('code');
+          codeId.textContent = s.source_id;
+          meta.append(codeId, ' — ' + (s.audio_chunks || 0) + ' audio + ' + (s.visual_chunks || 0) + ' visual chunks (total ' + (s.chunk_count || 0) + ')');
+          info.append(title, meta);
+          row.appendChild(info);
+          list.appendChild(row);
+        });
+      } catch (err) {
+        list.textContent = 'Error loading uploads: ' + err.message;
+      }
+    }
+
+    async function clearDemoCorpus() {
+      if (!confirm('Clear all ingested demo videos and their chunks?')) return;
+      try {
+        await fetch('/api/uploads', { method: 'DELETE' });
+        loadUploadedVideos();
+        document.getElementById('rag-result-container').style.display = 'none';
+        document.getElementById('video-player-container').style.display = 'none';
+        currentDemoVideoPath = null;
+      } catch (err) {
+        alert('Clear failed: ' + err.message);
+      }
+    }
+
+    async function submitRagQuery() {
+      const query = document.getElementById('rag-query-input').value.trim();
+      if (!query) return;
+      const sourceFilter = document.getElementById('rag-source-filter').value.trim();
+      const topK = parseInt(document.getElementById('rag-top-k-slider').value, 10) || 5;
+      const container = document.getElementById('rag-result-container');
+      container.style.display = 'block';
+      container.replaceChildren();
+      const loading = document.createElement('p');
+      loading.style.color = 'var(--warning)';
+      loading.textContent = '⏳ Running offline BM25 retrieval...';
+      container.appendChild(loading);
+      try {
+        const res = await fetch('/api/demo/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: query, top_k: topK, source_id: sourceFilter || null })
+        });
+        const data = await res.json();
+        container.replaceChildren();
+        const header = document.createElement('div');
+        header.style.cssText = 'margin-bottom:12px; font-size:0.85rem; color:var(--text-muted);';
+        header.textContent = 'Retrieved ' + data.total_retrieved + ' chunks from ' + data.chunk_count + ' total chunks in demo corpus.';
+        container.appendChild(header);
+        if (!data.results || data.results.length === 0) {
+          const empty = document.createElement('p');
+          empty.style.color = 'var(--text-muted)';
+          empty.textContent = 'No chunks matched. Try uploading a video with a transcript first.';
+          container.appendChild(empty);
+          return;
+        }
+        data.results.forEach(r => {
+          const card = document.createElement('div');
+          card.className = 'evidence-card';
+          card.style.marginBottom = '12px';
+          const hd = document.createElement('div');
+          hd.className = 'evidence-header';
+          const rankSpan = document.createElement('strong');
+          rankSpan.textContent = '#' + r.rank + ' — ' + r.time_bounds_str;
+          const scoreBadge = document.createElement('span');
+          scoreBadge.className = 'badge badge-' + (r.modality === 'visual' ? 'visual' : 'audio');
+          scoreBadge.textContent = (r.modality === 'visual' ? '🖼️' : '🎧') + ' Score: ' + r.score.toFixed(4);
+          hd.append(rankSpan, scoreBadge);
+          const sourceDiv = document.createElement('div');
+          sourceDiv.style.cssText = 'font-size:0.8rem; color:var(--text-muted);';
+          const codeSource = document.createElement('code');
+          codeSource.textContent = r.source_id;
+          sourceDiv.append('Source: ', codeSource, ' · Chunk: ' + (r.chunk_id || '').substring(0, 12) + '...');
+          const textDiv = document.createElement('div');
+          textDiv.style.cssText = 'font-size:0.875rem; color:#cbd5e1; white-space:pre-wrap; max-height:120px; overflow-y:auto; line-height:1.5;';
+          textDiv.textContent = r.text || '(No text — visual keyframe only)';
+          card.append(hd, sourceDiv, textDiv);
+          if (r.start_sec !== null && r.start_sec !== undefined) {
+            const seekBtn = document.createElement('button');
+            seekBtn.className = 'btn btn-secondary';
+            seekBtn.style.cssText = 'padding:4px 10px; font-size:0.8rem; margin-top:6px;';
+            seekBtn.textContent = '▶️ Seek to ' + r.time_bounds_str;
+            seekBtn.onclick = () => seekDemoVideo(r.start_sec);
+            card.appendChild(seekBtn);
+          }
+          container.appendChild(card);
+        });
+      } catch (err) {
+        container.textContent = 'RAG query failed: ' + err.message;
       }
     }
 
