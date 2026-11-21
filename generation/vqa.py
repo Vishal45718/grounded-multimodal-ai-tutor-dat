@@ -307,21 +307,30 @@ class OpenAICompatibleVisionAdapter(BaseVisionAdapter):
             import httpx
             with httpx.Client(timeout=self.timeout) as client:
                 res = client.post(endpoint, json=payload, headers=headers)
-                res.raise_for_status()
+                try:
+                    res.raise_for_status()
+                except httpx.HTTPStatusError as http_err:
+                    body = (res.text or "").strip().replace("\n", " ")[:200]
+                    raise RuntimeError(f"HTTP {res.status_code}: {body}") from http_err
                 data = res.json()
                 return data["choices"][0]["message"]["content"] or ""
         except ImportError:
             import json
             import urllib.request
+            import urllib.error
             req = urllib.request.Request(
                 endpoint,
                 data=json.dumps(payload).encode("utf-8"),
                 headers=headers,
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                return data["choices"][0]["message"]["content"] or ""
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    return data["choices"][0]["message"]["content"] or ""
+            except urllib.error.HTTPError as http_err:
+                body = (http_err.read().decode("utf-8", errors="replace") or "").strip().replace("\n", " ")[:200]
+                raise RuntimeError(f"HTTP {http_err.code}: {body}") from http_err
 
 
 def get_vision_adapter(vision_model: Any = None) -> Optional[BaseVisionAdapter]:

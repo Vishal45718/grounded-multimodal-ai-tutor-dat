@@ -885,10 +885,9 @@ _HTML_PAGE = """<!DOCTYPE html>
         </div>
 
         <div class="card">
-          <h3>🔎 Offline RAG Inspector — Query Uploaded Video</h3>
+          <h3>🔎 Live Grounded Q&amp;A &amp; Hybrid RAG Inspector</h3>
           <p style="font-size:0.875rem; color:var(--text-muted); margin-bottom:12px;">
-            Run an offline BM25 retrieval query over your uploaded video corpus. No API key needed.
-            Inspect retrieval scores, ranks, timestamps, and full text to verify RAG quality.
+            Ask questions across your uploaded videos or PDF slides. Combines hybrid retrieval with live grounded tutor reasoning and verified source citations (with offline fallback when unconfigured).
           </p>
           <div id="video-player-container" style="display:none; margin-bottom:16px;">
             <video id="demo-video-player" controls style="width:100%; border-radius:6px; background:#000; border:1px solid var(--card-border);">
@@ -908,7 +907,7 @@ _HTML_PAGE = """<!DOCTYPE html>
             <label>Top K: <span id="rag-top-k-val">5</span></label>
             <input type="range" id="rag-top-k-slider" min="1" max="20" value="5" oninput="document.getElementById('rag-top-k-val').textContent = this.value">
           </div>
-          <button class="btn" onclick="submitRagQuery()">🔍 Inspect Retrieval</button>
+          <button class="btn" onclick="submitRagQuery()">💬 Ask Tutor &amp; Inspect Retrieval</button>
           <div id="rag-result-container" style="margin-top:20px; display:none;"></div>
         </div>
       </div>
@@ -1052,7 +1051,19 @@ _HTML_PAGE = """<!DOCTYPE html>
         const badge = document.getElementById('backend-badge');
         if (data.is_live) {
           badge.className = 'badge badge-live';
-          badge.textContent = '🟢 Live Mode (' + (data.has_openai ? 'OpenAI' : '') + (data.has_gemini ? ' Gemini' : '') + ')';
+          let modelLabel = '';
+          if (data.has_llm_api && data.llm_model) {
+            modelLabel = data.llm_model.split('/').pop();
+          } else if (data.has_openai) {
+            modelLabel = 'OpenAI';
+          } else if (data.has_gemini) {
+            modelLabel = 'Gemini';
+          }
+          if (data.has_vision_api && data.vision_model) {
+            const vLabel = data.vision_model.split('/').pop();
+            modelLabel = modelLabel ? `${modelLabel} + ${vLabel}` : vLabel;
+          }
+          badge.textContent = '🟢 Live Mode' + (modelLabel ? ` (${modelLabel})` : '');
         } else {
           badge.className = 'badge badge-mock';
           badge.textContent = '🟠 Mock / Offline Mode';

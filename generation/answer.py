@@ -83,23 +83,32 @@ class OpenAICompatibleLLM:
             import httpx
             with httpx.Client(timeout=self.timeout) as client:
                 res = client.post(endpoint, json=payload, headers=headers)
-                res.raise_for_status()
+                try:
+                    res.raise_for_status()
+                except httpx.HTTPStatusError as http_err:
+                    body = (res.text or "").strip().replace("\n", " ")[:200]
+                    raise RuntimeError(f"HTTP {res.status_code}: {body}") from http_err
                 data = res.json()
                 content = data["choices"][0]["message"]["content"] or ""
                 return _CompletionResponse(content)
         except ImportError:
             import json
             import urllib.request
+            import urllib.error
             req = urllib.request.Request(
                 endpoint,
                 data=json.dumps(payload).encode("utf-8"),
                 headers=headers,
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                content = data["choices"][0]["message"]["content"] or ""
-                return _CompletionResponse(content)
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    content = data["choices"][0]["message"]["content"] or ""
+                    return _CompletionResponse(content)
+            except urllib.error.HTTPError as http_err:
+                body = (http_err.read().decode("utf-8", errors="replace") or "").strip().replace("\n", " ")[:200]
+                raise RuntimeError(f"HTTP {http_err.code}: {body}") from http_err
 
 
 GLOBAL_QUERY_CACHE = VersionSafeCache()
@@ -324,8 +333,9 @@ def generate_grounded_answer(
         try:
             answer_text = resolved_vision.generate(prompt, visual_payloads)
         except Exception as exc:
+            err_msg = str(exc) if str(exc) else type(exc).__name__
             return (
-                f"I abstain from answering due to an error executing the vision model: {type(exc).__name__}.",
+                f"I abstain from answering due to an error executing the vision model: {type(exc).__name__} ({err_msg}).",
                 [],
             )
     else:
@@ -387,8 +397,9 @@ def generate_grounded_answer(
             else:
                 answer_text = str(llm)
         except Exception as exc:
+            err_msg = str(exc) if str(exc) else type(exc).__name__
             return (
-                f"I abstain from answering due to an error executing the language model: {type(exc).__name__}.",
+                f"I abstain from answering due to an error executing the language model: {type(exc).__name__} ({err_msg}).",
                 [],
             )
 

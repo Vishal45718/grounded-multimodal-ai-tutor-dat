@@ -397,6 +397,35 @@ def test_openai_compatible_llm_adapter(monkeypatch):
     assert "[Evidence 1]" in resp.text
 
 
+def test_openai_compatible_error_surfacing(monkeypatch):
+    """Verify OpenAICompatibleLLM and OpenAICompatibleVisionAdapter surface exact HTTP status and body."""
+    import httpx
+
+    class ErrorResponse:
+        status_code = 404
+        text = '{"error": "model not supported"}'
+
+        def raise_for_status(self):
+            request = httpx.Request("POST", "http://fake/chat/completions")
+            response = httpx.Response(404, request=request, text=self.text)
+            raise httpx.HTTPStatusError("Not Found", request=request, response=response)
+
+    class FakeErrorClient:
+        def __init__(self, *args, **kwargs): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def post(self, url, json=None, headers=None):
+            return ErrorResponse()
+
+    monkeypatch.setattr(httpx, "Client", FakeErrorClient)
+
+    llm = OpenAICompatibleLLM(base_url="http://fake/v1", api_key="k", model="test-m")
+    with pytest.raises(RuntimeError) as exc_info:
+        llm.complete("hello")
+    assert "HTTP 404" in str(exc_info.value)
+    assert "model not supported" in str(exc_info.value)
+
+
 def test_openai_compatible_vision_adapter(tmp_path, monkeypatch):
     """Verify OpenAICompatibleVisionAdapter formats base64 images and calls endpoint."""
     fake_called = False
