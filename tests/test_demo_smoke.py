@@ -16,6 +16,8 @@ from config import CONFIG
 from storage.corpus_store import init_db
 from demo.app import app
 from demo.helpers import (
+    ALLOWED_IMAGE_EXTENSIONS,
+    DEFAULT_DEMO_MEMORY_DB,
     add_learner_memory_item,
     build_jump_url,
     correct_learner_memory_item,
@@ -27,6 +29,7 @@ from demo.helpers import (
     get_learner_memory_data,
     purge_learner_memory_items,
     run_tutor_query,
+    validate_demo_db_path,
     validate_media_path,
 )
 
@@ -96,10 +99,41 @@ def test_validate_media_path(tmp_path):
     assert res_missing["exists"] is False
     assert "File not found" in res_missing["error"]
 
-    # Traversal escape
-    res_escape = validate_media_path("../../secret.txt", base_dir=str(tmp_path / "sub"))
+    # Invalid extension
+    res_ext = validate_media_path("secret.txt", base_dir=str(tmp_path))
+    assert res_ext["valid"] is False
+    assert "Invalid media extension" in res_ext["error"]
+
+    # Traversal escape (with valid image extension)
+    res_escape = validate_media_path("../../secret.jpg", base_dir=str(tmp_path / "sub"))
     assert res_escape["valid"] is False
     assert "escapes" in res_escape["error"]
+
+
+def test_validate_demo_db_path(tmp_path):
+    # Default fallback
+    assert validate_demo_db_path(None) == DEFAULT_DEMO_MEMORY_DB
+    assert validate_demo_db_path("   ") == DEFAULT_DEMO_MEMORY_DB
+
+    # Production DB protection
+    with pytest.raises(ValueError, match="strictly prohibited"):
+        validate_demo_db_path("data/corpus.db")
+
+    with pytest.raises(ValueError, match="strictly prohibited"):
+        validate_demo_db_path("data/learner_memory.db")
+
+    # Extension check
+    with pytest.raises(ValueError, match="valid SQLite extension"):
+        validate_demo_db_path("data/test.json")
+
+    # Directory containment check
+    with pytest.raises(ValueError, match="escapes authorized demo directories"):
+        validate_demo_db_path("../../etc/passwd.db")
+
+    # Valid path in tmp_path
+    valid_target = str(tmp_path / "valid_demo.db")
+    result = validate_demo_db_path(valid_target, base_dir=str(tmp_path))
+    assert result == str(Path(valid_target).resolve())
 
 
 def test_format_citation_card(tmp_path):
@@ -354,3 +388,70 @@ def test_fastapi_media_endpoint(tmp_path, monkeypatch):
     # Request with missing file
     resp_missing = client.get("/media?path=missing_slide_never_exists.jpg")
     assert resp_missing.status_code == 404
+
+
+def test_fastapi_security_hardening():
+    client = TestClient(app)
+
+    # 1. Reject production DB targeting in query
+    resp_query_prod = client.post(
+        "/api/query",
+        json={"query": "What is C?", "memory_db_path": "data/corpus.db"},
+    )
+    assert resp_query_prod.status_code == 400
+    assert "prohibited" in resp_query_prod.json()["detail"].lower()
+
+    # 2. Reject directory traversal in query DB path
+    resp_query_traversal = client.post(
+        "/api/query",
+        json={"query": "What is C?", "memory_db_path": "../../etc/passwd.db"},
+    )
+    assert resp_query_traversal.status_code == 400
+
+    # 3. Reject production DB targeting in memory GET
+    resp_mem_get = client.get("/api/memory?learner_id=test&db_path=data/learner_memory.db")
+    assert resp_mem_get.status_code == 400
+
+    # 4. Reject production DB targeting in memory ADD
+    resp_mem_add = client.post(
+        "/api/memory/add",
+        json={
+            "learner_id": "test_user",
+            "topic": "recursion",
+            "content": "Confused",
+            "memory_db_path": "data/corpus.db",
+        },
+    )
+    assert resp_mem_add.status_code == 400
+
+    # 5. Reject non-SQLite file extension in memory DB path
+    resp_mem_ext = client.post(
+        "/api/memory/add",
+        json={
+            "learner_id": "test_user",
+            "topic": "recursion",
+            "content": "Confused",
+            "memory_db_path": "data/test.json",
+        },
+    )
+    assert resp_mem_ext.status_code == 400
+
+    # 6. Reject non-image extension in media endpoint
+    resp_media_ext = client.get("/media?path=config.py")
+    assert resp_media_ext.status_code == 400
+    assert "Invalid media extension" in resp_media_ext.json()["detail"]
+
+    # 7. Reject traversal in media endpoint
+    resp_media_traversal = client.get("/media?path=../../etc/passwd.jpg")
+    assert resp_media_traversal.status_code == 400
+
+    # 8. Status endpoint contains rich backend diagnostic keys
+    resp_status = client.get("/api/status")
+    assert resp_status.status_code == 200
+    data = resp_status.json()
+    assert "mode" in data
+    assert "vision_backend" in data
+    assert "configured_vision_backend" in data
+    assert "effective_vision_backend" in data
+    assert "effective_llm" in data
+    assert "status_description" in data

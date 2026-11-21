@@ -28,6 +28,9 @@ from memory.store import LearnerMemoryStore
 # Default demo database path (isolated from production learner_memory.db)
 DEFAULT_DEMO_MEMORY_DB = "data/demo_learner_memory.db"
 
+# Permitted image file extensions for media serving
+ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+
 # Additional user-friendly UI aliases mapping to canonical MemoryType names
 _UI_MEMORY_TYPE_ALIASES = {
     "struggle": "struggled_concept",
@@ -39,6 +42,70 @@ _UI_MEMORY_TYPE_ALIASES = {
     "correction": "student_correction",
     "mastery": "topic_mastery",
 }
+
+
+def validate_demo_db_path(
+    db_path: Optional[str],
+    base_dir: Optional[str] = None,
+) -> str:
+    """Validate that a requested database path is safely contained and never targets production databases.
+
+    Rules:
+    1. Rejects any attempt to target production data/corpus.db or data/learner_memory.db.
+    2. Rejects path traversal and ensures target resides in data/ or system temp directory.
+    3. Rejects invalid extensions (must be SQLite .db or .sqlite).
+    """
+    if not db_path or not db_path.strip():
+        return DEFAULT_DEMO_MEMORY_DB
+
+    clean = db_path.strip()
+    root = Path(base_dir or os.getcwd()).resolve()
+    target = (root / clean).resolve() if not os.path.isabs(clean) else Path(clean).resolve()
+
+    # 1. Explicitly protect production databases
+    prod_corpus = (root / "data" / "corpus.db").resolve()
+    prod_memory = (root / "data" / "learner_memory.db").resolve()
+    if target in (prod_corpus, prod_memory):
+        raise ValueError(f"Access to production database '{clean}' is strictly prohibited in demo mode.")
+
+    if hasattr(CONFIG, "corpus_db_path"):
+        cfg_corpus = Path(CONFIG.corpus_db_path).resolve()
+        if target == cfg_corpus and target.name == "corpus.db":
+            raise ValueError(f"Access to production corpus database '{clean}' is strictly prohibited.")
+
+    if hasattr(CONFIG, "memory_db_path"):
+        cfg_mem = Path(CONFIG.memory_db_path).resolve()
+        if target == cfg_mem and target.name == "learner_memory.db":
+            raise ValueError(f"Access to production learner memory database '{clean}' is strictly prohibited.")
+
+    # 2. Containment check: must be within data/ under workspace or system temp dir
+    allowed_dirs = [
+        (root / "data").resolve(),
+        Path(tempfile.gettempdir()).resolve(),
+    ]
+    if base_dir:
+        allowed_dirs.append(Path(base_dir).resolve())
+
+    is_contained = False
+    for ad in allowed_dirs:
+        try:
+            target.relative_to(ad)
+            is_contained = True
+            break
+        except ValueError:
+            continue
+
+    if not is_contained:
+        raise ValueError(
+            f"Database path '{clean}' escapes authorized demo directories. "
+            "Must be located within 'data/' or temporary test directory."
+        )
+
+    # 3. Extension check
+    if not any(clean.lower().endswith(ext) for ext in [".db", ".sqlite", ".sqlite3"]):
+        raise ValueError(f"Database path '{clean}' must have a valid SQLite extension (.db, .sqlite).")
+
+    return str(target)
 
 
 def format_time_seconds(sec: Optional[float]) -> str:
@@ -83,7 +150,7 @@ def validate_media_path(
     path: Optional[str],
     base_dir: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Validate whether an image / media path exists and is safely contained."""
+    """Validate whether an image / media path exists, is an authorized image format, and is safely contained."""
     if not path or not path.strip():
         return {
             "valid": False,
@@ -97,7 +164,18 @@ def validate_media_path(
     root = Path(base_dir or os.getcwd()).resolve()
     target = (root / clean_path).resolve() if not os.path.isabs(clean_path) else Path(clean_path).resolve()
 
-    # Allowed root directories: if explicit base_dir is given, only check base_dir;
+    # 1. Extension check
+    ext = target.suffix.lower()
+    if ext not in ALLOWED_IMAGE_EXTENSIONS:
+        return {
+            "valid": False,
+            "exists": False,
+            "path": clean_path,
+            "resolved_path": str(target),
+            "error": f"Invalid media extension '{ext}'. Only {sorted(ALLOWED_IMAGE_EXTENSIONS)} are allowed.",
+        }
+
+    # 2. Allowed root directories: if explicit base_dir is given, only check base_dir;
     # otherwise check workspace root and system temp directory
     if base_dir:
         allowed_roots = [Path(base_dir).resolve()]
@@ -169,20 +247,33 @@ def format_citation_card(
 
 
 def detect_backend_status() -> Dict[str, Any]:
-    """Inspect the environment to determine live vs offline backend availability."""
+    """Inspect the environment to determine actual live vs offline backend availability."""
     has_openai = bool(os.environ.get("OPENAI_API_KEY", "").strip())
     has_gemini = bool(os.environ.get("GEMINI_API_KEY", "").strip())
-    vision_backend = getattr(CONFIG, "vision_backend", "gemini")
+    configured_vision = getattr(CONFIG, "vision_backend", "gemini").lower().strip()
 
     is_live = has_openai or has_gemini
     mode = "Live" if is_live else "Mock / Offline"
+
+    if configured_vision == "gemini" and not has_gemini:
+        effective_vision_backend = "MockVisionAdapter (GEMINI_API_KEY unset)"
+    elif configured_vision == "openai" and not has_openai:
+        effective_vision_backend = "MockVisionAdapter (OPENAI_API_KEY unset)"
+    else:
+        effective_vision_backend = configured_vision
+
+    effective_llm = "OpenAI (gpt-4o-mini)" if has_openai else "Offline deterministic fallback"
 
     return {
         "mode": mode,
         "is_live": is_live,
         "has_openai": has_openai,
         "has_gemini": has_gemini,
-        "vision_backend": vision_backend,
+        "vision_backend": effective_vision_backend,
+        "configured_vision_backend": configured_vision,
+        "effective_vision_backend": effective_vision_backend,
+        "effective_llm": effective_llm,
+        "status_description": f"{mode} Mode — Vision: {effective_vision_backend}, LLM: {effective_llm}",
     }
 
 
@@ -202,7 +293,7 @@ def run_tutor_query(
     """Execute end-to-end tutor retrieval and answer generation with error handling."""
     init_db()
 
-    target_memory_db = memory_db_path or DEFAULT_DEMO_MEMORY_DB
+    target_memory_db = validate_demo_db_path(memory_db_path, base_dir=base_dir)
     memory_store: Optional[LearnerMemoryStore] = None
     if learner_id:
         memory_store = LearnerMemoryStore(db_path=target_memory_db)
@@ -260,9 +351,10 @@ def run_tutor_query(
 def get_learner_memory_data(
     learner_id: str,
     db_path: Optional[str] = None,
+    base_dir: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Fetch all memories, mastery states, and pedagogical context preview for a learner."""
-    target_db = db_path or DEFAULT_DEMO_MEMORY_DB
+    target_db = validate_demo_db_path(db_path, base_dir=base_dir)
     store = LearnerMemoryStore(db_path=target_db)
     try:
         memories = store.get_memories(learner_id)
@@ -304,6 +396,7 @@ def add_learner_memory_item(
     content: str,
     confidence: float = 1.0,
     db_path: Optional[str] = None,
+    base_dir: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Validate and insert a new learner memory record."""
     if not learner_id or not topic or not content:
@@ -314,7 +407,7 @@ def add_learner_memory_item(
     norm_type = _normalize_memory_type(canonical_type_name)
     mem_id = compute_memory_id(learner_id, norm_type, topic, content)
 
-    target_db = db_path or DEFAULT_DEMO_MEMORY_DB
+    target_db = validate_demo_db_path(db_path, base_dir=base_dir)
     store = LearnerMemoryStore(db_path=target_db)
     try:
         entry = MemoryEntry(
@@ -337,12 +430,13 @@ def correct_learner_memory_item(
     new_content: str,
     reason: str = "Demo correction",
     db_path: Optional[str] = None,
+    base_dir: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Apply a learner-directed correction to an existing memory item."""
     if not memory_id or not new_content:
         raise ValueError("memory_id and new_content are required.")
 
-    target_db = db_path or DEFAULT_DEMO_MEMORY_DB
+    target_db = validate_demo_db_path(db_path, base_dir=base_dir)
     store = LearnerMemoryStore(db_path=target_db)
     try:
         updated = store.correct_memory(
@@ -368,12 +462,13 @@ def delete_learner_memory_item(
     learner_id: str,
     memory_id: str,
     db_path: Optional[str] = None,
+    base_dir: Optional[str] = None,
 ) -> bool:
     """Soft-delete an individual memory record."""
     if not memory_id:
         raise ValueError("memory_id is required.")
 
-    target_db = db_path or DEFAULT_DEMO_MEMORY_DB
+    target_db = validate_demo_db_path(db_path, base_dir=base_dir)
     store = LearnerMemoryStore(db_path=target_db)
     try:
         return store.delete_memory(learner_id or "", memory_id)
@@ -384,12 +479,13 @@ def delete_learner_memory_item(
 def purge_learner_memory_items(
     learner_id: str,
     db_path: Optional[str] = None,
+    base_dir: Optional[str] = None,
 ) -> int:
     """Purge all records for a learner (GDPR/privacy compliant)."""
     if not learner_id:
         raise ValueError("learner_id is required.")
 
-    target_db = db_path or DEFAULT_DEMO_MEMORY_DB
+    target_db = validate_demo_db_path(db_path, base_dir=base_dir)
     store = LearnerMemoryStore(db_path=target_db)
     try:
         return store.purge_learner(learner_id)

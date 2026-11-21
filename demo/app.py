@@ -6,6 +6,7 @@ Provides a local interactive web interface for:
    and visual slide keyframes.
 3. Live learner memory inspector with isolated storage, live preview of
    pedagogical styling, and full CRUD controls (Add, Correct, Delete, Purge).
+4. Hardened path containment, database targeting protection, and XSS safety.
 """
 from __future__ import annotations
 
@@ -26,6 +27,7 @@ from demo.helpers import (
     get_learner_memory_data,
     purge_learner_memory_items,
     run_tutor_query,
+    validate_demo_db_path,
     validate_media_path,
 )
 
@@ -83,13 +85,18 @@ class PurgeLearnerRequest(BaseModel):
 
 @app.get("/api/status")
 def api_status() -> Dict[str, Any]:
-    """Return backend runtime mode and API availability."""
+    """Return backend runtime mode and API availability with clear effective indicators."""
     return detect_backend_status()
 
 
 @app.post("/api/query")
 def api_query(req: QueryRequest) -> Dict[str, Any]:
     """Execute tutor query with grounded retrieval and optional pedagogical styling."""
+    try:
+        validated_db = validate_demo_db_path(req.memory_db_path) if req.memory_db_path else None
+    except ValueError as val_err:
+        raise HTTPException(status_code=400, detail=str(val_err))
+
     try:
         result = run_tutor_query(
             query=req.query,
@@ -98,7 +105,7 @@ def api_query(req: QueryRequest) -> Dict[str, Any]:
             require_visual=req.require_visual,
             use_cache=req.use_cache,
             learner_id=req.learner_id.strip() if req.learner_id else None,
-            memory_db_path=req.memory_db_path.strip() if req.memory_db_path else None,
+            memory_db_path=validated_db,
         )
         return result
     except Exception as exc:
@@ -112,14 +119,24 @@ def api_get_memory(
 ) -> Dict[str, Any]:
     """Fetch all memories, mastery states, and pedagogical context for a learner."""
     try:
-        return get_learner_memory_data(learner_id=learner_id, db_path=db_path)
+        validated_db = validate_demo_db_path(db_path)
+    except ValueError as val_err:
+        raise HTTPException(status_code=400, detail=str(val_err))
+
+    try:
+        return get_learner_memory_data(learner_id=learner_id, db_path=validated_db)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.post("/api/memory/add")
 def api_add_memory(req: AddMemoryRequest) -> Dict[str, Any]:
-    """Add a new learner memory item."""
+    """Add a new learner memory item with strict DB containment."""
+    try:
+        validated_db = validate_demo_db_path(req.memory_db_path)
+    except ValueError as val_err:
+        raise HTTPException(status_code=400, detail=str(val_err))
+
     try:
         return add_learner_memory_item(
             learner_id=req.learner_id,
@@ -127,74 +144,103 @@ def api_add_memory(req: AddMemoryRequest) -> Dict[str, Any]:
             topic=req.topic,
             content=req.content,
             confidence=req.confidence,
-            db_path=req.memory_db_path,
+            db_path=validated_db,
         )
-    except Exception as exc:
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.post("/api/memory/correct")
 def api_correct_memory(req: CorrectMemoryRequest) -> Dict[str, Any]:
-    """Correct an existing learner memory item."""
+    """Correct an existing learner memory item with strict DB containment."""
+    try:
+        validated_db = validate_demo_db_path(req.memory_db_path)
+    except ValueError as val_err:
+        raise HTTPException(status_code=400, detail=str(val_err))
+
     try:
         res = correct_learner_memory_item(
             memory_id=req.memory_id,
             new_content=req.new_content,
             reason=req.reason,
-            db_path=req.memory_db_path,
+            db_path=validated_db,
         )
         if not res:
             raise HTTPException(status_code=404, detail=f"Memory item {req.memory_id} not found.")
         return res
     except HTTPException:
         raise
-    except Exception as exc:
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.post("/api/memory/delete")
 def api_delete_memory(req: DeleteMemoryRequest) -> Dict[str, Any]:
-    """Soft delete an individual learner memory."""
+    """Soft delete an individual learner memory with strict DB containment."""
+    try:
+        validated_db = validate_demo_db_path(req.memory_db_path)
+    except ValueError as val_err:
+        raise HTTPException(status_code=400, detail=str(val_err))
+
     try:
         success = delete_learner_memory_item(
             learner_id=req.learner_id,
             memory_id=req.memory_id,
-            db_path=req.memory_db_path,
+            db_path=validated_db,
         )
         return {"success": success, "memory_id": req.memory_id}
-    except Exception as exc:
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.post("/api/memory/purge")
 def api_purge_memory(req: PurgeLearnerRequest) -> Dict[str, Any]:
-    """Purge all memories for a learner."""
+    """Purge all memories for a learner with strict DB containment."""
+    try:
+        validated_db = validate_demo_db_path(req.memory_db_path)
+    except ValueError as val_err:
+        raise HTTPException(status_code=400, detail=str(val_err))
+
     try:
         count = purge_learner_memory_items(
             learner_id=req.learner_id,
-            db_path=req.memory_db_path,
+            db_path=validated_db,
         )
         return {"purged_count": count, "learner_id": req.learner_id}
-    except Exception as exc:
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.get("/media")
 def api_media(path: str = Query(..., min_length=1)):
-    """Safely serve local image keyframe assets."""
+    """Safely serve local image keyframe assets with extension and path restriction."""
     val = validate_media_path(path)
-    if not val["valid"] or not val["exists"]:
-        raise HTTPException(status_code=404, detail=val.get("error") or "Media file not found")
+    if not val["valid"]:
+        raise HTTPException(status_code=400, detail=val.get("error") or "Invalid media path.")
+    if not val["exists"]:
+        raise HTTPException(status_code=404, detail=val.get("error") or "Media file not found on disk.")
 
     resolved = val["resolved_path"]
     media_type = "image/jpeg"
-    if resolved.lower().endswith(".png"):
+    lower_path = resolved.lower()
+    if lower_path.endswith(".png"):
         media_type = "image/png"
+    elif lower_path.endswith(".webp"):
+        media_type = "image/webp"
+
     return FileResponse(resolved, media_type=media_type)
 
 
 # ----------------------------------------------------------------------
-# Frontend HTML/CSS/JS Single-Page Application
+# Frontend HTML/CSS/JS Single-Page Application (XSS-Hardened)
 # ----------------------------------------------------------------------
 
 _HTML_PAGE = """<!DOCTYPE html>
@@ -488,7 +534,7 @@ _HTML_PAGE = """<!DOCTYPE html>
 <body>
   <header>
     <h1>🎓 DAT Tutor — M8 Interactive Demo</h1>
-    <div id="backend-badge" class="badge badge-mock">Checking Backend...</div>
+    <div id="backend-badge" class="badge badge-mock" title="Backend Status">Checking Backend...</div>
   </header>
 
   <div class="container">
@@ -497,7 +543,7 @@ _HTML_PAGE = """<!DOCTYPE html>
         <h2>System Controls</h2>
         <div class="form-group">
           <label>Top K Chunks: <span id="top-k-val">5</span></label>
-          <input type="range" id="top-k-slider" min="1" max="10" value="5" oninput="document.getElementById('top-k-val').innerText = this.value">
+          <input type="range" id="top-k-slider" min="1" max="10" value="5" oninput="document.getElementById('top-k-val').textContent = this.value">
         </div>
         <div class="toggle-row">
           <span>Reranker (M8)</span>
@@ -522,7 +568,7 @@ _HTML_PAGE = """<!DOCTYPE html>
         <div class="form-group">
           <label>Memory DB Path</label>
           <input type="text" id="sidebar-memory-db" value="data/demo_learner_memory.db">
-          <small style="color:var(--text-muted); font-size:0.75rem;">Isolated demo database path</small>
+          <small style="color:var(--text-muted); font-size:0.75rem;">Isolated demo database path (in data/)</small>
         </div>
       </div>
 
@@ -616,11 +662,11 @@ _HTML_PAGE = """<!DOCTYPE html>
             <div class="form-group">
               <label>Memory Type</label>
               <select id="new-mem-type">
-                <option value="goal">Goal (Learning objective)</option>
-                <option value="struggle">Struggle (Difficult concept)</option>
-                <option value="preference">Preference (Explanation style)</option>
-                <option value="style">Style (Concise / Detailed)</option>
-                <option value="background">Background (Prior experience)</option>
+                <option value="learning_goal">Goal (Learning objective)</option>
+                <option value="struggled_concept">Struggled Concept (Difficult concept)</option>
+                <option value="learning_preference">Preference (Explanation style)</option>
+                <option value="misconception">Misconception</option>
+                <option value="student_correction">Correction</option>
               </select>
             </div>
             <div class="form-group">
@@ -633,7 +679,7 @@ _HTML_PAGE = """<!DOCTYPE html>
             </div>
             <div class="form-group">
               <label>Confidence: <span id="conf-val">1.0</span></label>
-              <input type="range" id="new-mem-conf" min="0.1" max="1.0" step="0.1" value="1.0" oninput="document.getElementById('conf-val').innerText = this.value">
+              <input type="range" id="new-mem-conf" min="0.1" max="1.0" step="0.1" value="1.0" oninput="document.getElementById('conf-val').textContent = this.value">
             </div>
             <button class="btn" onclick="submitAddMemory()">➕ Add Memory</button>
           </div>
@@ -676,11 +722,12 @@ _HTML_PAGE = """<!DOCTYPE html>
         const badge = document.getElementById('backend-badge');
         if (data.is_live) {
           badge.className = 'badge badge-live';
-          badge.innerText = '🟢 Live Mode (' + (data.has_openai ? 'OpenAI' : '') + (data.has_gemini ? ' Gemini' : '') + ')';
+          badge.textContent = '🟢 Live Mode (' + (data.has_openai ? 'OpenAI' : '') + (data.has_gemini ? ' Gemini' : '') + ')';
         } else {
           badge.className = 'badge badge-mock';
-          badge.innerText = '🟠 Mock / Offline Mode';
+          badge.textContent = '🟠 Mock / Offline Mode';
         }
+        badge.title = data.status_description || '';
       } catch (err) {
         console.error('Status check failed:', err);
       }
@@ -706,7 +753,7 @@ _HTML_PAGE = """<!DOCTYPE html>
 
       const askBtn = document.getElementById('ask-btn');
       askBtn.disabled = true;
-      askBtn.innerText = '⏳ Retrieving & Generating...';
+      askBtn.textContent = '⏳ Retrieving & Generating...';
 
       const payload = {
         query: query,
@@ -724,41 +771,50 @@ _HTML_PAGE = """<!DOCTYPE html>
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({ detail: res.statusText }));
+          throw new Error(errData.detail || 'Query failed');
+        }
         const data = await res.json();
 
         document.getElementById('result-section').style.display = 'block';
-        document.getElementById('answer-text').innerText = data.answer;
+        document.getElementById('answer-text').textContent = data.answer;
 
         const badge = document.getElementById('answer-status-badge');
         if (data.is_abstained) {
           badge.className = 'badge badge-mock';
-          badge.innerText = 'Abstained';
+          badge.textContent = 'Abstained';
         } else if (data.is_qualified) {
           badge.className = 'badge badge-mock';
-          badge.innerText = 'Qualified';
+          badge.textContent = 'Qualified';
         } else {
           badge.className = 'badge badge-live';
-          badge.innerText = 'Answered';
+          badge.textContent = 'Answered';
         }
 
-        const alert = document.getElementById('pedagogical-alert');
-        alert.style.display = data.pedagogical_context_used ? 'block' : 'none';
+        const alertEl = document.getElementById('pedagogical-alert');
+        alertEl.style.display = data.pedagogical_context_used ? 'block' : 'none';
 
-        document.getElementById('citation-count').innerText = data.citation_count;
+        document.getElementById('citation-count').textContent = String(data.citation_count || 0);
         renderEvidence(data.citations);
       } catch (err) {
         alert('Query failed: ' + err.message);
       } finally {
         askBtn.disabled = false;
-        askBtn.innerText = '🚀 Ask Tutor';
+        askBtn.textContent = '🚀 Ask Tutor';
       }
     }
 
+    // XSS-Safe DOM construction for evidence cards
     function renderEvidence(citations) {
       const container = document.getElementById('evidence-container');
-      container.innerHTML = '';
+      container.replaceChildren();
+
       if (!citations || citations.length === 0) {
-        container.innerHTML = '<div style="color:var(--text-muted); font-size:0.85rem;">No citations referenced.</div>';
+        const emptyDiv = document.createElement('div');
+        emptyDiv.style.cssText = 'color:var(--text-muted); font-size:0.85rem;';
+        emptyDiv.textContent = 'No citations referenced.';
+        container.appendChild(emptyDiv);
         return;
       }
 
@@ -766,49 +822,67 @@ _HTML_PAGE = """<!DOCTYPE html>
         const card = document.createElement('div');
         card.className = 'evidence-card';
 
+        const header = document.createElement('div');
+        header.className = 'evidence-header';
+
+        const strongLabel = document.createElement('strong');
+        strongLabel.textContent = c.citation_label || '';
+        header.appendChild(strongLabel);
+
         const isVisual = c.modality === 'visual';
-        const modBadge = isVisual
-          ? '<span class="badge badge-visual">🖼️ Visual</span>'
-          : '<span class="badge badge-audio">🎧 Audio</span>';
+        const modBadge = document.createElement('span');
+        modBadge.className = isVisual ? 'badge badge-visual' : 'badge badge-audio';
+        modBadge.textContent = isVisual ? '🖼️ Visual' : '🎧 Audio';
+        header.appendChild(modBadge);
 
-        let mediaHtml = '';
+        const metaDiv = document.createElement('div');
+        metaDiv.style.cssText = 'font-size:0.8rem; color:var(--text-muted);';
+        const codeSource = document.createElement('code');
+        codeSource.textContent = c.source_id || '';
+        metaDiv.append('Source: ', codeSource, ' · ' + (c.time_bounds_str || ''));
+
+        card.appendChild(header);
+        card.appendChild(metaDiv);
+
         if (isVisual) {
+          const imgContainer = document.createElement('div');
+          imgContainer.className = 'evidence-img-container';
           if (c.image_path) {
-            mediaHtml = `
-              <div class="evidence-img-container">
-                <img src="/media?path=${encodeURIComponent(c.image_path)}"
-                     alt="Slide Image"
-                     onerror="this.parentElement.innerHTML='<div class=\\'img-placeholder\\'>⚠️ Image not found on disk: ${c.image_path}</div>'">
-              </div>
-            `;
+            const img = document.createElement('img');
+            img.src = '/media?path=' + encodeURIComponent(c.image_path);
+            img.alt = 'Slide Image';
+            img.onerror = () => {
+              imgContainer.replaceChildren();
+              const ph = document.createElement('div');
+              ph.className = 'img-placeholder';
+              ph.textContent = '⚠️ Image not found on disk: ' + c.image_path;
+              imgContainer.appendChild(ph);
+            };
+            imgContainer.appendChild(img);
           } else {
-            mediaHtml = '<div class="img-placeholder">No image path specified</div>';
+            const ph = document.createElement('div');
+            ph.className = 'img-placeholder';
+            ph.textContent = 'No image path specified';
+            imgContainer.appendChild(ph);
           }
+          card.appendChild(imgContainer);
         }
 
-        let navHtml = '';
+        const textDiv = document.createElement('div');
+        textDiv.style.cssText = 'font-size:0.85rem; color:#cbd5e1; max-height:100px; overflow-y:auto; line-height:1.4;';
+        textDiv.textContent = c.text || '(No transcript text)';
+        card.appendChild(textDiv);
+
         if (c.jump_url) {
-          navHtml = `
-            <a href="${c.jump_url}" target="_blank" rel="noopener noreferrer" style="color:var(--primary); font-size:0.8rem; text-decoration:none; font-weight:600;">
-              ▶️ Jump to Source (${c.time_bounds_str})
-            </a>
-          `;
+          const link = document.createElement('a');
+          link.href = c.jump_url;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.style.cssText = 'color:var(--primary); font-size:0.8rem; text-decoration:none; font-weight:600;';
+          link.textContent = '▶️ Jump to Source (' + (c.time_bounds_str || '') + ')';
+          card.appendChild(link);
         }
 
-        card.innerHTML = `
-          <div class="evidence-header">
-            <strong>${c.citation_label}</strong>
-            ${modBadge}
-          </div>
-          <div style="font-size:0.8rem; color:var(--text-muted);">
-            Source: <code>${c.source_id}</code> &middot; ${c.time_bounds_str}
-          </div>
-          ${mediaHtml}
-          <div style="font-size:0.85rem; color:#cbd5e1; max-height:100px; overflow-y:auto; line-height:1.4;">
-            ${c.text || '<em style="color:var(--text-muted);">No transcript text</em>'}
-          </div>
-          ${navHtml}
-        `;
         container.appendChild(card);
       });
     }
@@ -820,32 +894,73 @@ _HTML_PAGE = """<!DOCTYPE html>
 
       try {
         const res = await fetch(`/api/memory?learner_id=${encodeURIComponent(learnerId)}&db_path=${encodeURIComponent(dbPath)}`);
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({ detail: res.statusText }));
+          throw new Error(errData.detail || 'Failed to load memory');
+        }
         const data = await res.json();
 
         const preview = document.getElementById('pedagogical-preview');
-        preview.innerText = data.pedagogical_context || '(No pedagogical profile active for this learner)';
+        preview.textContent = data.pedagogical_context || '(No pedagogical profile active for this learner)';
 
         const tbody = document.getElementById('memory-table-body');
-        tbody.innerHTML = '';
+        tbody.replaceChildren();
+
         if (!data.memories || data.memories.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">No memories found.</td></tr>';
+          const emptyTr = document.createElement('tr');
+          const emptyTd = document.createElement('td');
+          emptyTd.colSpan = 7;
+          emptyTd.style.cssText = 'text-align:center; color:var(--text-muted);';
+          emptyTd.textContent = 'No memories found.';
+          emptyTr.appendChild(emptyTd);
+          tbody.appendChild(emptyTr);
           return;
         }
 
+        // XSS-Safe table row generation
         data.memories.forEach(m => {
           const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td><code>${m.memory_id.substring(0, 10)}...</code></td>
-            <td><span class="badge badge-audio">${m.memory_type_str}</span></td>
-            <td><strong>${m.topic}</strong></td>
-            <td>${m.content}</td>
-            <td>${m.confidence.toFixed(2)}</td>
-            <td>${m.revision_count}</td>
-            <td>
-              <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.75rem;" onclick="prefillCorrect('${m.memory_id}', '${m.content.replace(/'/g, "\\\\'")}')">Correct</button>
-              <button class="btn btn-danger" style="padding:4px 8px; font-size:0.75rem;" onclick="deleteMemory('${m.memory_id}')">Del</button>
-            </td>
-          `;
+
+          const tdId = document.createElement('td');
+          const codeId = document.createElement('code');
+          codeId.textContent = (m.memory_id || '').substring(0, 10) + '...';
+          tdId.appendChild(codeId);
+
+          const tdType = document.createElement('td');
+          const badgeType = document.createElement('span');
+          badgeType.className = 'badge badge-audio';
+          badgeType.textContent = m.memory_type_str || '';
+          tdType.appendChild(badgeType);
+
+          const tdTopic = document.createElement('td');
+          const strongTopic = document.createElement('strong');
+          strongTopic.textContent = m.topic || '';
+          tdTopic.appendChild(strongTopic);
+
+          const tdContent = document.createElement('td');
+          tdContent.textContent = m.content || '';
+
+          const tdConf = document.createElement('td');
+          tdConf.textContent = Number(m.confidence || 0).toFixed(2);
+
+          const tdRevs = document.createElement('td');
+          tdRevs.textContent = String(m.revision_count || 0);
+
+          const tdActions = document.createElement('td');
+          const btnCorrect = document.createElement('button');
+          btnCorrect.className = 'btn btn-secondary';
+          btnCorrect.style.cssText = 'padding:4px 8px; font-size:0.75rem;';
+          btnCorrect.textContent = 'Correct';
+          btnCorrect.onclick = () => prefillCorrect(m.memory_id, m.content);
+
+          const btnDel = document.createElement('button');
+          btnDel.className = 'btn btn-danger';
+          btnDel.style.cssText = 'padding:4px 8px; font-size:0.75rem;';
+          btnDel.textContent = 'Del';
+          btnDel.onclick = () => deleteMemory(m.memory_id);
+
+          tdActions.append(btnCorrect, document.createTextNode(' '), btnDel);
+          tr.append(tdId, tdType, tdTopic, tdContent, tdConf, tdRevs, tdActions);
           tbody.appendChild(tr);
         });
       } catch (err) {
@@ -854,8 +969,8 @@ _HTML_PAGE = """<!DOCTYPE html>
     }
 
     function prefillCorrect(id, content) {
-      document.getElementById('correct-mem-id').value = id;
-      document.getElementById('correct-mem-content').value = content;
+      document.getElementById('correct-mem-id').value = id || '';
+      document.getElementById('correct-mem-content').value = content || '';
     }
 
     async function submitAddMemory() {
@@ -884,7 +999,10 @@ _HTML_PAGE = """<!DOCTYPE html>
             memory_db_path: dbPath
           })
         });
-        if (!res.ok) throw new Error(await res.text());
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({ detail: res.statusText }));
+          throw new Error(errData.detail || 'Add memory failed');
+        }
         document.getElementById('new-mem-topic').value = '';
         document.getElementById('new-mem-content').value = '';
         loadMemoryData();
@@ -915,7 +1033,10 @@ _HTML_PAGE = """<!DOCTYPE html>
             memory_db_path: dbPath
           })
         });
-        if (!res.ok) throw new Error(await res.text());
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({ detail: res.statusText }));
+          throw new Error(errData.detail || 'Correction failed');
+        }
         document.getElementById('correct-mem-id').value = '';
         document.getElementById('correct-mem-content').value = '';
         loadMemoryData();
@@ -939,7 +1060,10 @@ _HTML_PAGE = """<!DOCTYPE html>
             memory_db_path: dbPath
           })
         });
-        if (!res.ok) throw new Error(await res.text());
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({ detail: res.statusText }));
+          throw new Error(errData.detail || 'Delete failed');
+        }
         loadMemoryData();
       } catch (err) {
         alert('Delete failed: ' + err.message);
@@ -960,7 +1084,10 @@ _HTML_PAGE = """<!DOCTYPE html>
             memory_db_path: dbPath
           })
         });
-        if (!res.ok) throw new Error(await res.text());
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({ detail: res.statusText }));
+          throw new Error(errData.detail || 'Purge failed');
+        }
         loadMemoryData();
       } catch (err) {
         alert('Purge failed: ' + err.message);
