@@ -485,6 +485,83 @@ def call_ocr_vlm(
 
 
 # ---------------------------------------------------------------------------
+# Audio Decoding & Whisper Transcription (PyAV metadata_errors Bypass)
+# ---------------------------------------------------------------------------
+
+def decode_audio_ffmpeg_pcm(media_path: str) -> Optional[Any]:
+    """Decode video or audio file to 16 kHz mono float32 PCM using ffmpeg.
+
+    Bypasses PyAV container metadata_errors bug in faster-whisper.
+    Returns a 1D float32 NumPy array, or None if ffmpeg fails or is unavailable.
+    """
+    cmd = [
+        "ffmpeg",
+        "-nostdin",
+        "-i",
+        str(media_path),
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-f",
+        "f32le",
+        "pipe:1",
+    ]
+    try:
+        proc = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        import numpy as np
+        if proc.stdout:
+            return np.frombuffer(proc.stdout, dtype=np.float32)
+        return None
+    except Exception:
+        return None
+
+
+def transcribe_video_whisper(
+    media_path: str,
+    model_size: Optional[str] = None,
+) -> List[TranscriptSegment]:
+    """Transcribe video or audio using faster-whisper on CPU.
+
+    Bypasses PyAV metadata_errors incompatibility by decoding to 16 kHz mono
+    float32 PCM via ffmpeg before calling model.transcribe(audio_np, vad_filter=True).
+    Falls back to file path if ffmpeg decoding fails or is unavailable.
+    """
+    from faster_whisper import WhisperModel
+
+    model_name = (
+        model_size
+        or os.environ.get("WHISPER_MODEL_SIZE")
+        or os.environ.get("WHISPER_MODEL")
+        or getattr(CONFIG, "whisper_model_size", "tiny")
+    )
+    try:
+        model = WhisperModel(model_name, device="cpu", compute_type="int8")
+    except Exception:
+        fallback = "base" if model_name != "base" else "tiny"
+        model = WhisperModel(fallback, device="cpu", compute_type="int8")
+
+    pcm_data = decode_audio_ffmpeg_pcm(media_path)
+    audio_input = pcm_data if (pcm_data is not None and len(pcm_data) > 0) else media_path
+
+    segments, _info = model.transcribe(audio_input, vad_filter=True)
+    return [
+        TranscriptSegment(
+            start_sec=float(seg.start),
+            end_sec=float(seg.end),
+            text=seg.text.strip(),
+        )
+        for seg in segments
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Core Ingestion Pipeline
 # ---------------------------------------------------------------------------
 
@@ -565,15 +642,7 @@ def ingest_uploaded_video(
             warnings.append(f"Transcript parse failed ({e}). Skipping speech chunks.")
     elif capabilities["faster_whisper"]:
         try:
-            from ingestion.transcriber import transcribe
-            from ingestion.video_processor import extract_audio
-            audio_path = extract_audio(
-                video_path,
-                out_dir=os.path.join(source_upload_dir, "audio"),
-                source_id=source_id,
-                content_hash=content_hash,
-            )
-            transcript_segments = transcribe(audio_path)
+            transcript_segments = transcribe_video_whisper(video_path)
             transcript_format = "whisper"
         except Exception as e:
             warnings.append(

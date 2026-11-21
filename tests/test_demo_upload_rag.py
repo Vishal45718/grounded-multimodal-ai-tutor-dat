@@ -32,6 +32,7 @@ from demo.upload_ingest import (
     DemoCorpusStore,
     DemoRetriever,
     call_ocr_vlm,
+    decode_audio_ffmpeg_pcm,
     ingest_uploaded_pdf,
     ingest_uploaded_video,
     parse_srt,
@@ -39,6 +40,7 @@ from demo.upload_ingest import (
     parse_txt_transcript,
     parse_vtt,
     sanitize_filename,
+    transcribe_video_whisper,
 )
 from demo.helpers import (
     detect_backend_status,
@@ -643,6 +645,65 @@ def test_fastapi_upload_and_rag_endpoints(synthetic_video, synthetic_pdf, tmp_pa
     res = client.get("/api/uploads")
     assert res.status_code == 200
     assert res.json()["count"] == 0
+
+
+def test_decode_audio_ffmpeg_pcm_and_whisper_bypass(synthetic_video, monkeypatch):
+    """Verify decode_audio_ffmpeg_pcm extracts float32 PCM and faster-whisper bypasses PyAV."""
+    import numpy as np
+
+    # 1. Test direct PCM extraction via ffmpeg
+    pcm = decode_audio_ffmpeg_pcm(synthetic_video)
+    assert pcm is not None
+    assert isinstance(pcm, np.ndarray)
+    assert pcm.dtype == np.float32
+    # 1 second of 16kHz audio ~ 16000 samples
+    assert len(pcm) >= 15000
+
+    # 2. Test fallback when ffmpeg fails or file doesn't exist
+    res_invalid = decode_audio_ffmpeg_pcm("non_existent_file.mp4")
+    assert res_invalid is None
+
+    # 3. Test transcribe_video_whisper with mocked WhisperModel to verify
+    #    it passes numpy float32 array to model.transcribe(audio_np, vad_filter=True)
+    transcribe_args = {}
+
+    class DummySegment:
+        start = 0.0
+        end = 1.0
+        text = "Hello world from audio"
+
+    class DummyWhisperModel:
+        def __init__(self, model_size, device="cpu", compute_type="int8"):
+            assert device == "cpu"
+            assert compute_type == "int8"
+            assert model_size in ("tiny", "base")
+
+        def transcribe(self, audio, vad_filter=True):
+            transcribe_args["audio"] = audio
+            transcribe_args["vad_filter"] = vad_filter
+            return [DummySegment()], None
+
+    import sys
+    import types
+    fake_mod = types.ModuleType("faster_whisper")
+    fake_mod.WhisperModel = DummyWhisperModel
+    monkeypatch.setitem(sys.modules, "faster_whisper", fake_mod)
+
+    segs = transcribe_video_whisper(synthetic_video, model_size="tiny")
+    assert len(segs) == 1
+    assert segs[0].start_sec == 0.0
+    assert segs[0].end_sec == 1.0
+    assert segs[0].text == "Hello world from audio"
+    assert isinstance(transcribe_args["audio"], np.ndarray)
+    assert transcribe_args["audio"].dtype == np.float32
+    assert transcribe_args["vad_filter"] is True
+
+    # 4. Test fallback to path when ffmpeg decoding returns None
+    from demo import upload_ingest
+    monkeypatch.setattr(upload_ingest, "decode_audio_ffmpeg_pcm", lambda path: None)
+    segs_fallback = transcribe_video_whisper("fallback_video.mp4", model_size="tiny")
+    assert len(segs_fallback) == 1
+    assert transcribe_args["audio"] == "fallback_video.mp4"
 
 
 def test_production_db_hashes_unchanged():
