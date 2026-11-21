@@ -14,6 +14,7 @@ class Config:
     min_chunk_duration_sec: float = 3.0
     max_chunk_duration_sec: float = 30.0
     manifest_path: str = os.environ.get("MANIFEST_PATH", "data/source_manifest.json")
+    memory_db_path: str = os.environ.get("MEMORY_DB_PATH", "data/learner_memory.db")
     vision_backend: str = os.environ.get("VISION_BACKEND", "gemini")
     vision_model_name: str = os.environ.get("VISION_MODEL_NAME", "gemini-2.5-flash")
     max_visual_images: int = int(os.environ.get("MAX_VISUAL_IMAGES", "5"))

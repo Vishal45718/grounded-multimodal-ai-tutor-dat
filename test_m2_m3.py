@@ -32,7 +32,12 @@ def main():
     print("\n--- Citations ---")
     for c in citations:
         if c['citation_label'] in answer:
-            print(f"{c['citation_label']}: Source {c['source_id']} @ {c['start_sec']}s - {c['end_sec']}s ({c['modality']})")
+            time_str = (
+                f"{c['start_sec']}s - {c['end_sec']}s"
+                if c.get('start_sec') is not None
+                else f"Slide Page {c.get('page_number', 'N/A')}"
+            )
+            print(f"{c['citation_label']}: Source {c['source_id']} @ {time_str} ({c['modality']})")
 
 if __name__ == "__main__":
     main()

@@ -1,13 +1,14 @@
-"""In-memory learner memory engine (M5.2).
+"""In-memory or SQLite-backed learner memory engine (M5.2).
 
-Deterministic, process-local storage. Not durable across restarts. Learner
-records are isolated by ``learner_id`` and are never corpus evidence.
+Deterministic storage. When ``store`` is provided, profile and memory
+records are persisted across restarts in SQLite. Learner records are isolated
+by ``learner_id`` and are never corpus evidence.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Callable, Dict, List, Optional, Union
+from typing import Callable, Dict, List, Optional, Union, TYPE_CHECKING
 
 from memory.models import (
     LearnerCorrection,
@@ -21,6 +22,9 @@ from memory.models import (
     now_utc,
 )
 from memory.policy import MemoryDecision, MemoryPolicy
+
+if TYPE_CHECKING:
+    from memory.store import LearnerMemoryStore
 
 
 Clock = Callable[[], datetime]
@@ -51,7 +55,7 @@ def _topic_key(topic: str) -> str:
 
 
 class LearnerMemoryEngine:
-    """Create, retrieve, correct, and delete learner memories in memory.
+    """Create, retrieve, correct, and delete learner memories in memory or SQLite store.
 
     Public operations:
     - ``upsert_profile`` / ``get_profile``
@@ -77,11 +81,13 @@ class LearnerMemoryEngine:
         self,
         policy: Optional[MemoryPolicy] = None,
         clock: Optional[Clock] = None,
+        store: Optional[LearnerMemoryStore] = None,
     ) -> None:
         shared_clock = clock or now_utc
         self.policy = policy or MemoryPolicy(clock=shared_clock)
         if clock is not None:
             self.policy.clock = clock
+        self.store = store
         self._profiles: Dict[str, LearnerProfile] = {}
         self._memories: Dict[str, Dict[str, MemoryEntry]] = {}
         self._mastery: Dict[str, Dict[str, MasteryState]] = {}
@@ -102,7 +108,11 @@ class LearnerMemoryEngine:
 
         ``created_at`` is preserved on updates; ``updated_at`` follows the clock.
         """
-        existing = self._profiles.get(learner_id)
+        existing = (
+            self.store.get_profile(learner_id)
+            if self.store is not None
+            else self._profiles.get(learner_id)
+        )
         moment = self.now()
         if existing is None:
             profile = LearnerProfile(
@@ -113,31 +123,37 @@ class LearnerMemoryEngine:
                 learning_preferences=dict(learning_preferences or {}),
                 metadata=dict(metadata or {}),
             )
-            self._profiles[profile.learner_id] = profile
-            return profile
+        else:
+            merged_prefs = dict(existing.learning_preferences)
+            if learning_preferences:
+                merged_prefs.update(learning_preferences)
+            merged_meta = dict(existing.metadata)
+            if metadata:
+                merged_meta.update(metadata)
+            profile = LearnerProfile(
+                learner_id=existing.learner_id,
+                created_at=existing.created_at,
+                updated_at=moment,
+                preferred_learning_level=(
+                    preferred_learning_level
+                    if preferred_learning_level is not None
+                    else existing.preferred_learning_level
+                ),
+                learning_preferences=merged_prefs,
+                metadata=merged_meta,
+            )
 
-        merged_prefs = dict(existing.learning_preferences)
-        if learning_preferences:
-            merged_prefs.update(learning_preferences)
-        merged_meta = dict(existing.metadata)
-        if metadata:
-            merged_meta.update(metadata)
-        profile = LearnerProfile(
-            learner_id=existing.learner_id,
-            created_at=existing.created_at,
-            updated_at=moment,
-            preferred_learning_level=(
-                preferred_learning_level
-                if preferred_learning_level is not None
-                else existing.preferred_learning_level
-            ),
-            learning_preferences=merged_prefs,
-            metadata=merged_meta,
-        )
+        if self.store is not None:
+            self.store.upsert_profile(profile)
         self._profiles[profile.learner_id] = profile
         return profile
 
     def get_profile(self, learner_id: str) -> Optional[LearnerProfile]:
+        if self.store is not None:
+            profile = self.store.get_profile(learner_id)
+            if profile is not None:
+                self._profiles[learner_id] = profile
+                return profile
         return self._profiles.get(learner_id)
 
     def add_memory(self, entry: MemoryEntry) -> MemoryEntry:
@@ -152,8 +168,12 @@ class LearnerMemoryEngine:
         if decision.action is MemoryDecision.EXPIRE:
             raise MemoryRejected(decision.reason)
 
-        bucket = self._memories.setdefault(entry.learner_id, {})
-        existing = bucket.get(entry.memory_id)
+        existing = (
+            self.store.get_memory(entry.learner_id, entry.memory_id, include_inactive=True)
+            if self.store is not None
+            else self._memories.get(entry.learner_id, {}).get(entry.memory_id)
+        )
+
         if existing is not None:
             stored = MemoryEntry(
                 memory_id=existing.memory_id,
@@ -171,10 +191,20 @@ class LearnerMemoryEngine:
             )
         else:
             stored = entry
+
+        if self.store is not None:
+            self.store.add_memory(stored)
+
+        bucket = self._memories.setdefault(stored.learner_id, {})
         bucket[stored.memory_id] = stored
         return stored
 
     def _owned(self, learner_id: str, memory_id: str) -> Optional[MemoryEntry]:
+        if self.store is not None:
+            entry = self.store.get_memory(learner_id, memory_id, include_inactive=True)
+            if entry is not None:
+                self._memories.setdefault(learner_id, {})[memory_id] = entry
+                return entry
         return self._memories.get(learner_id, {}).get(memory_id)
 
     def get_memory(
@@ -204,15 +234,28 @@ class LearnerMemoryEngine:
             _normalize_memory_type(memory_type) if memory_type is not None else None
         )
         topic_filter = _topic_key(topic) if topic else None
-        items = []
-        for entry in self._memories.get(learner_id, {}).values():
-            if not self.policy.is_retrievable(entry):
-                continue
-            if resolved_type is not None and entry.memory_type is not resolved_type:
-                continue
-            if topic_filter is not None and _topic_key(entry.topic) != topic_filter:
-                continue
-            items.append(entry)
+
+        if self.store is not None:
+            # Query from store, respecting policy retrievability and ordering
+            store_entries = self.store.get_memories(
+                learner_id,
+                memory_type=resolved_type,
+                topic=topic,
+                include_inactive=False,
+                as_of=self.now(),
+            )
+            items = [m for m in store_entries if self.policy.is_retrievable(m)]
+        else:
+            items = []
+            for entry in self._memories.get(learner_id, {}).values():
+                if not self.policy.is_retrievable(entry):
+                    continue
+                if resolved_type is not None and entry.memory_type is not resolved_type:
+                    continue
+                if topic_filter is not None and _topic_key(entry.topic) != topic_filter:
+                    continue
+                items.append(entry)
+
         items.sort(key=lambda m: (m.created_at, m.memory_id, m.topic))
         return items
 
@@ -229,9 +272,16 @@ class LearnerMemoryEngine:
         """Create or update topic mastery. Weak evidence cannot yield MASTERED."""
         if evidence_increment < 1:
             raise ValueError("evidence_increment must be >= 1")
-        by_topic = self._mastery.setdefault(learner_id, {})
+
         key = _topic_key(topic)
-        previous = by_topic.get(key)
+        previous = None
+        if self.store is not None:
+            existing_states = self.store.get_mastery(learner_id, topic=topic)
+            previous = existing_states[0] if existing_states else None
+        if previous is None:
+            by_topic = self._mastery.setdefault(learner_id, {})
+            previous = by_topic.get(key)
+
         evidence_count = (previous.evidence_count if previous else 0) + evidence_increment
         requested_status = _normalize_mastery_status(
             status if status is not None else (
@@ -258,14 +308,22 @@ class LearnerMemoryEngine:
             status=requested_status,
             metadata=dict(previous.metadata) if previous else {},
         )
+
+        if self.store is not None:
+            self.store.update_mastery(state)
+
+        by_topic = self._mastery.setdefault(learner_id, {})
         by_topic[key] = state
         return state
 
     def get_mastery(self, learner_id: str, topic: Optional[str] = None) -> List[MasteryState]:
-        states = list(self._mastery.get(learner_id, {}).values())
-        if topic is not None:
-            key = _topic_key(topic)
-            states = [s for s in states if _topic_key(s.topic) == key]
+        if self.store is not None:
+            states = self.store.get_mastery(learner_id, topic=topic)
+        else:
+            states = list(self._mastery.get(learner_id, {}).values())
+            if topic is not None:
+                key = _topic_key(topic)
+                states = [s for s in states if _topic_key(s.topic) == key]
         states.sort(key=lambda s: (s.topic.lower(), s.learner_id))
         return states
 
@@ -303,8 +361,6 @@ class LearnerMemoryEngine:
                 f"{correction.learner_id!r}"
             )
 
-        self._corrections.setdefault(correction.learner_id, []).append(correction)
-
         replacement = MemoryEntry(
             learner_id=original.learner_id,
             memory_type=original.memory_type,
@@ -336,11 +392,20 @@ class LearnerMemoryEngine:
                 "superseded_by": replacement.memory_id,
             },
         )
+
+        if self.store is not None:
+            self.store.apply_correction(correction)
+
+        self._corrections.setdefault(correction.learner_id, []).append(correction)
         self._memories.setdefault(original.learner_id, {})[deactivated.memory_id] = deactivated
-        return self.add_memory(replacement)
+        self._memories.setdefault(replacement.learner_id, {})[replacement.memory_id] = replacement
+        return replacement
 
     def get_corrections(self, learner_id: str) -> List[LearnerCorrection]:
-        items = list(self._corrections.get(learner_id, []))
+        if self.store is not None:
+            items = self.store.get_corrections(learner_id)
+        else:
+            items = list(self._corrections.get(learner_id, []))
         items.sort(key=lambda c: (c.created_at, c.correction_id))
         return items
 
@@ -349,11 +414,17 @@ class LearnerMemoryEngine:
 
         A caller cannot delete another learner's memory by ID.
         """
+        deleted_in_store = False
+        if self.store is not None:
+            deleted_in_store = self.store.delete_memory(learner_id, memory_id)
+
         bucket = self._memories.get(learner_id)
-        if not bucket or memory_id not in bucket:
-            return False
-        del bucket[memory_id]
-        return True
+        deleted_in_mem = False
+        if bucket and memory_id in bucket:
+            del bucket[memory_id]
+            deleted_in_mem = True
+
+        return deleted_in_store or deleted_in_mem
 
     def build_learner_context(
         self,

@@ -12,6 +12,7 @@ Provides:
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 import time
 from contextlib import contextmanager
@@ -56,19 +57,50 @@ def _iso_to_dt(val: Optional[str]) -> Optional[datetime]:
     return dt
 
 
+def _validate_json_source(val: Any, path: str = "source") -> None:
+    """Validate that val contains only strictly JSON-compatible structures.
+
+    Accepted: None, str, bool, finite int/float, list, dict with str keys.
+    Rejected: tuples, sets, custom objects, non-string dict keys, NaN, Infinity.
+    """
+    if val is None or isinstance(val, (str, bool)):
+        return
+    if isinstance(val, int):
+        return
+    if isinstance(val, float):
+        if not math.isfinite(val):
+            raise SourceSerializationError(
+                f"Non-finite float value {val!r} at {path} is not valid JSON."
+            )
+        return
+    if isinstance(val, list):
+        for idx, item in enumerate(val):
+            _validate_json_source(item, f"{path}[{idx}]")
+        return
+    if isinstance(val, dict):
+        for k, v in val.items():
+            if not isinstance(k, str):
+                raise SourceSerializationError(
+                    f"Dictionary key {k!r} (type {type(k).__name__}) at {path} is not a string."
+                )
+            _validate_json_source(v, f"{path}[{k!r}]")
+        return
+    raise SourceSerializationError(
+        f"Unsupported value of type {type(val).__name__} ({val!r}) at {path}. "
+        "Only JSON-compatible values (None, str, bool, finite int/float, list, dict with str keys) are permitted."
+    )
+
+
 def _serialize_source(val: Any) -> Optional[str]:
     """Serialize source field to JSON strictly preserving JSON-compatible values.
 
-    Raises SourceSerializationError if val contains unsupported Python objects.
+    Raises SourceSerializationError if val contains unsupported Python objects,
+    non-string keys, tuples, sets, or non-finite floats.
     """
     if val is None:
         return None
-    try:
-        return json.dumps(val)
-    except (TypeError, ValueError) as err:
-        raise SourceSerializationError(
-            f"Cannot serialize source of type {type(val).__name__!r} to JSON: {err}"
-        ) from err
+    _validate_json_source(val)
+    return json.dumps(val, allow_nan=False)
 
 
 def _serialize_json(val: Any) -> str:

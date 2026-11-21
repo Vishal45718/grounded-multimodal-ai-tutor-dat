@@ -14,12 +14,15 @@ Computes:
 import argparse
 import json
 import os
+from pathlib import Path
 import sys
 import time
 from typing import Any, Dict, List, Tuple
 
 # Ensure project root in sys.path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_PROJECT_ROOT))
+_DEFAULT_CASES_PATH = str(_PROJECT_ROOT / "benchmark" / "cases_60.jsonl")
 
 from benchmark.run_eval import evaluate_retrieval
 from retrieval.retriever import TutorRetriever
@@ -97,7 +100,7 @@ def evaluate_configuration(
 
 
 def run_characterization(
-    cases_path: str = "benchmark/cases_60.jsonl",
+    cases_path: str = _DEFAULT_CASES_PATH,
     output_path: str = "benchmark/results/performance_characterization.json",
     top_k: int = 5,
 ) -> Dict[str, Any]:
@@ -187,7 +190,7 @@ def run_characterization(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="M8 Performance Characterization Harness")
-    parser.add_argument("--cases", default="benchmark/cases_60.jsonl", help="Benchmark cases file")
+    parser.add_argument("--cases", default=_DEFAULT_CASES_PATH, help="Benchmark cases file")
     parser.add_argument("--output", default="benchmark/results/performance_characterization.json", help="Output path")
     parser.add_argument("--top-k", type=int, default=5, help="Retrieval candidate top-k")
     args = parser.parse_args()

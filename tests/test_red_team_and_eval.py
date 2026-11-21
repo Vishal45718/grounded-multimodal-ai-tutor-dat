@@ -1,9 +1,12 @@
 """Unit tests for M7: Adversarial Red Team, Prompt Injection Defense, and Evaluation Harness."""
 import json
 import os
+from pathlib import Path
 import pytest
 from guardrails.injection_defense import InjectionDefense
 from benchmark.run_eval import evaluate_retrieval, compute_token_f1
+
+_CASES_PATH = Path(__file__).resolve().parent.parent / "benchmark" / "cases_60.jsonl"
 
 
 # ----------------------------------------------------------------------
@@ -157,7 +160,7 @@ def test_compute_token_f1():
 # ----------------------------------------------------------------------
 
 def test_benchmark_60_cases_schema_and_distribution():
-    path = "benchmark/cases_60.jsonl"
+    path = str(_CASES_PATH)
     assert os.path.exists(path)
 
     cases = []
