@@ -1,37 +1,49 @@
-"""Offline unit and integration tests for demo video upload, ingestion, and RAG inspector.
+"""Offline unit and integration tests for demo video/PDF upload, ingestion, RAG inspector,
+and OpenAI-compatible live mentor model stack adapters (Gemma4-12B, GLM-4.6V-Flash, PaddleOCR-VL-1.6).
 
 Verifies:
 1. DemoCorpusStore schema initialization and integrity check.
 2. Transcript parsers (VTT, SRT, TXT) and filename sanitization.
-3. Path validation and video serve security.
-4. End-to-end offline ingestion pipeline (ffmpeg-generated synthetic video + VTT).
-5. Offline BM25 retrieval over demo corpus.
-6. FastAPI endpoints (/api/upload, /api/uploads, /api/demo/query, /media/video).
-7. Strict zero mutation of production databases (data/corpus.db and data/learner_memory.db).
+3. Path validation and video/pdf media serve security.
+4. End-to-end video ingestion pipeline with synthetic video + transcript.
+5. Standalone PDF upload ingestion and slide rendering.
+6. Either/or upload validation in FastAPI (video OR pdf, rejecting empty requests).
+7. OpenAI-compatible text LLM adapter (Gemma4-12B FP8) with mocked completion.
+8. OpenAI-compatible VLM adapter (GLM-4.6V-Flash) with image base64 delivery.
+9. OpenAI-compatible OCR VLM (PaddleOCR-VL-1.6) text extraction.
+10. Grounded Q&A over demo corpus returning live answer + citations.
+11. Strict zero mutation of production databases (data/corpus.db and data/learner_memory.db).
 """
 
 import hashlib
 import io
+import json
 import os
 import shutil
 import subprocess
 import pytest
 from fastapi.testclient import TestClient
 
+from config import CONFIG
 from ingestion.versioning import SourceVersion
+from generation.answer import OpenAICompatibleLLM, generate_grounded_answer
+from generation.vqa import OpenAICompatibleVisionAdapter, VisualPayload
 from demo.upload_ingest import (
     DemoCorpusStore,
     DemoRetriever,
-    sanitize_filename,
-    parse_vtt,
-    parse_srt,
-    parse_txt_transcript,
-    parse_transcript_file,
+    call_ocr_vlm,
+    ingest_uploaded_pdf,
     ingest_uploaded_video,
+    parse_srt,
+    parse_transcript_file,
+    parse_txt_transcript,
+    parse_vtt,
+    sanitize_filename,
 )
 from demo.helpers import (
-    validate_video_serve_path,
+    detect_backend_status,
     run_demo_corpus_query,
+    validate_video_serve_path,
 )
 from demo.app import app
 
@@ -61,6 +73,25 @@ def synthetic_video(tmp_path):
     res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if res.returncode != 0:
         pytest.skip("ffmpeg not available or failed to create synthetic video")
+    return str(out_path)
+
+
+@pytest.fixture
+def synthetic_pdf(tmp_path):
+    """Generate a minimal 2-page PDF file for standalone slide upload tests."""
+    try:
+        import pymupdf as fitz
+    except ImportError:
+        import fitz
+
+    out_path = tmp_path / "test_slides.pdf"
+    doc = fitz.open()
+    p1 = doc.new_page()
+    p1.insert_text((50, 50), "CS50 Lecture on Pointer Arithmetic")
+    p2 = doc.new_page()
+    p2.insert_text((50, 50), "Memory allocation with malloc and free")
+    doc.save(str(out_path))
+    doc.close()
     return str(out_path)
 
 
@@ -171,6 +202,13 @@ def test_validate_video_serve_path(tmp_path):
     assert res["valid"] is True
     assert res["exists"] is True
 
+    # Valid PDF file inside root
+    valid_pdf = allowed_root / "slides.pdf"
+    valid_pdf.write_bytes(b"dummy pdf content")
+    res_pdf = validate_video_serve_path(str(valid_pdf), uploads_dir=str(allowed_root))
+    assert res_pdf["valid"] is True
+    assert res_pdf["exists"] is True
+
     # Invalid extension
     bad_ext = allowed_root / "exploit.py"
     bad_ext.write_text("print(1)")
@@ -183,7 +221,7 @@ def test_validate_video_serve_path(tmp_path):
     res = validate_video_serve_path(str(escape_vid), uploads_dir=str(allowed_root))
     assert res["valid"] is False
 
-    # Nonexistent file (path syntax & containment valid, but file missing)
+    # Nonexistent file
     res = validate_video_serve_path(str(allowed_root / "nonexistent.mp4"), uploads_dir=str(allowed_root))
     assert res["valid"] is True
     assert res["exists"] is False
@@ -232,6 +270,41 @@ Introduction to algorithm analysis and asymptotic notation.
     assert "asymptotic" in audio_chunks[0]["text"]
 
 
+def test_ingest_standalone_pdf(synthetic_pdf, tmp_path):
+    """Verify standalone PDF slides ingestion renders JPEG pages and stores visual chunks."""
+    demo_db = str(tmp_path / "demo_pdf.db")
+    uploads_dir = str(tmp_path / "uploads_pdf")
+
+    report = ingest_uploaded_pdf(
+        pdf_path=synthetic_pdf,
+        title="Pointer Arithmetic Lecture",
+        uploads_dir=uploads_dir,
+        demo_corpus_db=demo_db,
+    )
+
+    assert report["status"] == "ok"
+    assert report["title"] == "Pointer Arithmetic Lecture"
+    assert report["audio_chunks"] == 0
+    assert report["visual_chunks"] == 2
+    assert report["total_chunks"] == 2
+
+    # Check database persistence
+    store = DemoCorpusStore(db_path=demo_db)
+    sources = store.list_sources()
+    assert len(sources) == 1
+    assert sources[0]["visual_chunks"] == 2
+
+    chunks = store.active_chunks(source_id=report["source_id"])
+    assert len(chunks) == 2
+    assert chunks[0]["page_number"] == 1
+    assert chunks[1]["page_number"] == 2
+    assert "Pointer" in chunks[0]["text"]
+    assert "malloc" in chunks[1]["text"]
+    # Check rendered image on disk
+    assert os.path.exists(chunks[0]["image_path"])
+    assert os.path.exists(chunks[1]["image_path"])
+
+
 def test_demo_retriever_query(synthetic_video, tmp_path):
     """Verify DemoRetriever retrieves matched chunks by BM25 scoring."""
     demo_db = str(tmp_path / "demo.db")
@@ -269,10 +342,192 @@ Merge sort operates in divide and conquer.
     assert q_res["total_retrieved"] >= 1
     assert "Merge sort" in q_res["results"][0]["text"]
     assert q_res["results"][0]["rank"] == 1
+    assert "answer" in q_res
+    assert "citations" in q_res
 
 
-def test_fastapi_upload_and_rag_endpoints(synthetic_video, tmp_path, monkeypatch):
-    """Verify FastAPI integration for upload, list, query, and video serve."""
+def test_openai_compatible_llm_adapter(monkeypatch):
+    """Verify OpenAICompatibleLLM dispatches requests to OpenAI-compatible endpoint."""
+    fake_called = False
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "According to the lecture [Evidence 1], pointers store memory addresses."
+                        }
+                    }
+                ]
+            }
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def post(self, url, json=None, headers=None):
+            nonlocal fake_called
+            fake_called = True
+            assert "/chat/completions" in url
+            assert json["model"] == "google/gemma-4-12b-it-fp8"
+            assert "Authorization" in headers
+            return FakeResponse()
+
+    import httpx
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+
+    llm = OpenAICompatibleLLM(
+        base_url="http://fake-vllm:8000/v1",
+        api_key="fake-test-key",
+        model="google/gemma-4-12b-it-fp8",
+    )
+
+    resp = llm.complete("Explain pointer arithmetic in C.")
+    assert fake_called is True
+    assert "[Evidence 1]" in resp.text
+
+
+def test_openai_compatible_vision_adapter(tmp_path, monkeypatch):
+    """Verify OpenAICompatibleVisionAdapter formats base64 images and calls endpoint."""
+    fake_called = False
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "The slide displays a memory diagram with addresses [Evidence 1]."
+                        }
+                    }
+                ]
+            }
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def post(self, url, json=None, headers=None):
+            nonlocal fake_called
+            fake_called = True
+            assert "/chat/completions" in url
+            assert json["model"] == "zai-org/GLM-4.6V-Flash"
+            content = json["messages"][0]["content"]
+            assert any(part.get("type") == "image_url" for part in content)
+            return FakeResponse()
+
+    import httpx
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+
+    adapter = OpenAICompatibleVisionAdapter(
+        base_url="http://fake-vision:8000/v1",
+        api_key="fake-vision-key",
+        model_name="zai-org/GLM-4.6V-Flash",
+    )
+    assert adapter.is_available() is True
+
+    img_file = tmp_path / "test.jpg"
+    img_file.write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 32)
+    payload = VisualPayload(
+        label="[Evidence 1]",
+        image_path=str(img_file),
+        image_bytes=img_file.read_bytes(),
+    )
+
+    ans = adapter.generate("What is in this diagram?", [payload])
+    assert fake_called is True
+    assert "[Evidence 1]" in ans
+
+
+def test_call_ocr_vlm_adapter(tmp_path, monkeypatch):
+    """Verify call_ocr_vlm calls PaddleOCR-VL-1.6 endpoint with image."""
+    fake_called = False
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "int *ptr = malloc(sizeof(int));"
+                        }
+                    }
+                ]
+            }
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def post(self, url, json=None, headers=None):
+            nonlocal fake_called
+            fake_called = True
+            assert json["model"] == "PaddlePaddle/PaddleOCR-VL-1.6"
+            return FakeResponse()
+
+    import httpx
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+
+    img_file = tmp_path / "code_slide.jpg"
+    img_file.write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 32)
+
+    extracted = call_ocr_vlm(
+        image_path=str(img_file),
+        base_url="http://fake-ocr:8000/v1",
+        api_key="fake-ocr-key",
+        model="PaddlePaddle/PaddleOCR-VL-1.6",
+    )
+    assert fake_called is True
+    assert "malloc" in extracted
+
+
+def test_detect_backend_status_reporting(monkeypatch):
+    """Verify detect_backend_status reflects configured OpenAI-compatible endpoints."""
+    monkeypatch.setattr(CONFIG, "llm_api_key", "mock-llm-key")
+    monkeypatch.setattr(CONFIG, "llm_model", "google/gemma-4-12b-it-fp8")
+    monkeypatch.setattr(CONFIG, "vision_api_key", "mock-vis-key")
+    monkeypatch.setattr(CONFIG, "vision_model", "zai-org/GLM-4.6V-Flash")
+    monkeypatch.setattr(CONFIG, "ocr_api_key", "mock-ocr-key")
+    monkeypatch.setattr(CONFIG, "ocr_base_url", "http://fake-ocr/v1")
+    monkeypatch.setattr(CONFIG, "ocr_model", "PaddlePaddle/PaddleOCR-VL-1.6")
+
+    status = detect_backend_status()
+    assert status["is_live"] is True
+    assert "google/gemma-4-12b-it-fp8" in status["effective_llm"]
+    assert "zai-org/GLM-4.6V-Flash" in status["effective_vision_backend"]
+    assert "PaddlePaddle/PaddleOCR-VL-1.6" in status["effective_ocr"]
+
+
+def test_fastapi_upload_and_rag_endpoints(synthetic_video, synthetic_pdf, tmp_path, monkeypatch):
+    """Verify FastAPI integration for video + standalone PDF uploads, either/or checks, and live Q&A."""
     demo_db = str(tmp_path / "api_demo.db")
     uploads_dir = str(tmp_path / "api_uploads")
     os.makedirs(uploads_dir, exist_ok=True)
@@ -287,12 +542,26 @@ def test_fastapi_upload_and_rag_endpoints(synthetic_video, tmp_path, monkeypatch
 
     client = TestClient(app)
 
-    # 1. Initial list should be empty
-    res = client.get("/api/uploads")
-    assert res.status_code == 200
-    assert res.json()["count"] == 0
+    # 1. Reject empty upload (neither video nor pdf)
+    res = client.post("/api/upload", data={"title": "Empty Upload"})
+    assert res.status_code == 400
 
-    # 2. Upload video with transcript
+    # 2. Upload standalone PDF
+    with open(synthetic_pdf, "rb") as pf:
+        pdf_bytes = pf.read()
+
+    res = client.post(
+        "/api/upload",
+        files={"slides_pdf": ("lecture_slides.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+        data={"title": "Standalone Slides Lecture"}
+    )
+    assert res.status_code == 200, res.text
+    pdf_data = res.json()
+    assert pdf_data["status"] == "ok"
+    assert pdf_data["visual_chunks"] == 2
+    assert pdf_data["audio_chunks"] == 0
+
+    # 3. Upload video with transcript
     with open(synthetic_video, "rb") as vf:
         v_bytes = vf.read()
     vtt_bytes = b"WEBVTT\n\n00:00:00.100 --> 00:00:00.900\nFastAPI integration test transcript.\n"
@@ -306,39 +575,42 @@ def test_fastapi_upload_and_rag_endpoints(synthetic_video, tmp_path, monkeypatch
         data={"title": "Test Lecture API"}
     )
     assert res.status_code == 200, res.text
-    data = res.json()
-    assert data["status"] == "ok"
-    assert data["title"] == "Test Lecture API"
-    assert data["total_chunks"] >= 1
-    video_path = data["video_path"]
+    v_data = res.json()
+    assert v_data["status"] == "ok"
+    video_path = v_data["video_path"]
 
-    # 3. List should now have 1 source
+    # 4. List uploads -> should have 2 sources (PDF + Video)
     res = client.get("/api/uploads")
     assert res.status_code == 200
-    assert res.json()["count"] == 1
+    assert res.json()["count"] == 2
 
-    # 4. RAG inspection query
+    # 5. RAG Q&A query -> returns grounded answer and citations
     res = client.post("/api/demo/query", json={"query": "FastAPI integration", "top_k": 3})
     assert res.status_code == 200
     q_data = res.json()
     assert q_data["total_retrieved"] >= 1
-    assert "FastAPI" in q_data["results"][0]["text"]
+    assert "answer" in q_data
+    assert "citations" in q_data
 
-    # 5. Media video serve endpoint
+    # 6. Media video serve endpoint for both video and pdf
     res = client.get(f"/media/video?path={video_path}")
     assert res.status_code in (200, 206)
     assert "video/mp4" in res.headers.get("content-type", "")
 
-    # 6. Reject invalid video path
+    res_pdf = client.get(f"/media/video?path={pdf_data['pdf_path']}")
+    assert res_pdf.status_code in (200, 206)
+    assert "application/pdf" in res_pdf.headers.get("content-type", "")
+
+    # 7. Reject invalid media paths
     res = client.get("/media/video?path=config.py")
     assert res.status_code == 400
 
-    # 7. Clear uploads
+    # 8. Clear uploads
     res = client.delete("/api/uploads")
     assert res.status_code == 200
     assert res.json()["cleared"] is True
 
-    # 8. List should be empty again
+    # 9. List should be empty again
     res = client.get("/api/uploads")
     assert res.status_code == 200
     assert res.json()["count"] == 0

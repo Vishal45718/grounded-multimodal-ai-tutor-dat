@@ -21,6 +21,7 @@ Design constraints:
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import os
 import re
@@ -33,6 +34,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from config import CONFIG
 from ingestion.chunker import EvidenceChunk, build_chunks, compute_chunk_id
 from ingestion.transcriber import TranscriptSegment
 from ingestion.versioning import SourceVersion, file_content_hash
@@ -48,7 +50,8 @@ MAX_VIDEO_BYTES = 250 * 1024 * 1024  # 250 MB
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".mkv"}
 ALLOWED_TRANSCRIPT_EXTENSIONS = {".vtt", ".srt", ".txt"}
 ALLOWED_SLIDES_EXTENSIONS = {".pdf"}
-ALLOWED_VIDEO_SERVE_EXTENSIONS = ALLOWED_VIDEO_EXTENSIONS  # same set
+ALLOWED_MEDIA_EXTENSIONS = {".mp4", ".webm", ".mov", ".mkv", ".pdf"}
+ALLOWED_VIDEO_SERVE_EXTENSIONS = ALLOWED_MEDIA_EXTENSIONS
 
 _SCHEMA_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "storage", "schema.sql")
 
@@ -413,6 +416,74 @@ def validate_upload_video_path(path: str) -> None:
         )
 
 
+def call_ocr_vlm(
+    image_path: str,
+    base_url: Optional[str] = None,
+    api_key: Optional[str] = None,
+    model: Optional[str] = None,
+    timeout: float = 60.0,
+) -> str:
+    """Call an OpenAI-compatible OCR VLM (e.g. PaddlePaddle/PaddleOCR-VL-1.6) to extract text from a slide or frame."""
+    resolved_api_key = api_key or getattr(CONFIG, "ocr_api_key", "")
+    resolved_base_url = (base_url or getattr(CONFIG, "ocr_base_url", "")).rstrip("/")
+    resolved_model = model or getattr(CONFIG, "ocr_model", "PaddlePaddle/PaddleOCR-VL-1.6")
+
+    if not resolved_api_key or not resolved_base_url:
+        return ""
+
+    if not os.path.exists(image_path):
+        return ""
+
+    try:
+        with open(image_path, "rb") as f:
+            b64_str = base64.b64encode(f.read()).decode("utf-8")
+
+        prompt = "Transcribe all text, code snippets, titles, headings, and formulas visible in this slide or video frame accurately and verbatim. Return only the extracted text."
+        payload = {
+            "model": resolved_model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{b64_str}"},
+                        },
+                    ],
+                }
+            ],
+            "temperature": 0.0,
+        }
+        headers = {
+            "Authorization": f"Bearer {resolved_api_key}",
+            "Content-Type": "application/json",
+        }
+        endpoint = f"{resolved_base_url}/chat/completions"
+
+        try:
+            import httpx
+            with httpx.Client(timeout=timeout) as client:
+                res = client.post(endpoint, json=payload, headers=headers)
+                res.raise_for_status()
+                data = res.json()
+                return data["choices"][0]["message"]["content"].strip()
+        except ImportError:
+            import json
+            import urllib.request
+            req = urllib.request.Request(
+                endpoint,
+                data=json.dumps(payload).encode("utf-8"),
+                headers=headers,
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                return data["choices"][0]["message"]["content"].strip()
+    except Exception:
+        return ""
+
+
 # ---------------------------------------------------------------------------
 # Core Ingestion Pipeline
 # ---------------------------------------------------------------------------
@@ -527,12 +598,17 @@ def ingest_uploaded_video(
         warnings.append("ffmpeg not available — skipping keyframe extraction.")
 
     # --- PDF slides ---
+    pdf_ocr_results: List[Any] = []
     if slides_pdf_path and capabilities["pymupdf"]:
         try:
             from ingestion.ocr import extract_pdf_slides
             pdf_ocr = extract_pdf_slides(slides_pdf_path, source_id, content_hash, base_dir=frames_dir)
-            # Merge as extra "visual" OCR results at timestamp=None
-            keyframe_pairs = keyframe_pairs  # pdf handled via build_chunks OCR path
+            for item in pdf_ocr:
+                if not getattr(item, "text", "") and getattr(CONFIG, "ocr_api_key", "") and getattr(CONFIG, "ocr_base_url", ""):
+                    vlm_text = call_ocr_vlm(item.image_path)
+                    if vlm_text:
+                        item.text = vlm_text
+                pdf_ocr_results.append(item)
         except Exception as e:
             warnings.append(f"PDF slide extraction failed ({e}).")
 
@@ -542,7 +618,9 @@ def ingest_uploaded_video(
 
     for ts, img_path in keyframe_pairs:
         text = ""
-        if capabilities["pytesseract"]:
+        if getattr(CONFIG, "ocr_api_key", "") and getattr(CONFIG, "ocr_base_url", ""):
+            text = call_ocr_vlm(img_path)
+        if not text and capabilities["pytesseract"]:
             try:
                 import pytesseract
                 from PIL import Image
@@ -555,6 +633,8 @@ def ingest_uploaded_video(
             text=text,
             status="success",
         ))
+
+    ocr_results.extend(pdf_ocr_results)
 
     # --- Build EvidenceChunks ---
     chunks = build_chunks(
@@ -593,6 +673,140 @@ def ingest_uploaded_video(
         "transcript_format": transcript_format,
         "video_path": video_path,
         "video_url": video_url,
+        "demo_corpus_db": demo_corpus_db,
+        "warnings": warnings,
+        "capabilities": capabilities,
+    }
+
+
+def ingest_uploaded_pdf(
+    pdf_path: str,
+    title: Optional[str] = None,
+    uploads_dir: str = DEMO_UPLOADS_DIR,
+    demo_corpus_db: str = DEMO_CORPUS_DB,
+) -> Dict[str, Any]:
+    """Ingest a standalone uploaded PDF presentation or document into the demo corpus.
+
+    Renders each PDF page into a JPEG under data/demo_uploads/<stem>_<hash>/pages/
+    Extracts text per page (using PaddleOCR-VL-1.6 if configured, else PyMuPDF page text),
+    and creates visual chunks with page_number and image_path.
+    """
+    warnings: List[str] = []
+    capabilities: Dict[str, bool] = {
+        "pymupdf": False,
+        "ocr_vlm": bool(getattr(CONFIG, "ocr_api_key", "") and getattr(CONFIG, "ocr_base_url", "")),
+        "pytesseract": False,
+    }
+
+    try:
+        import pymupdf as fitz  # noqa: F401
+        capabilities["pymupdf"] = True
+    except ImportError:
+        try:
+            import fitz  # noqa: F401
+            capabilities["pymupdf"] = True
+        except ImportError:
+            pass
+
+    try:
+        import pytesseract  # noqa: F401
+        capabilities["pytesseract"] = True
+    except ImportError:
+        pass
+
+    if not capabilities["pymupdf"]:
+        raise RuntimeError("PyMuPDF / fitz is required for PDF ingestion but is not installed.")
+
+    content_hash = file_content_hash(pdf_path)
+    raw_name = Path(pdf_path).name
+    stem = sanitize_filename(raw_name)
+    source_id = make_source_id(stem)
+    resolved_title = title.strip() if (title and title.strip()) else Path(pdf_path).stem
+
+    # Isolated upload dir for rendered pages
+    source_upload_dir = os.path.join(uploads_dir, f"{stem}_{content_hash[:8]}")
+    pages_dir = os.path.join(source_upload_dir, "pages")
+    os.makedirs(pages_dir, exist_ok=True)
+
+    chunks: List[EvidenceChunk] = []
+    import fitz
+    doc = fitz.open(pdf_path)
+    try:
+        for idx, page in enumerate(doc):
+            page_num = idx + 1
+            image_name = f"slide_{page_num:05d}.jpg"
+            image_path = os.path.join(pages_dir, image_name)
+
+            # Render page to JPEG
+            try:
+                pix = page.get_pixmap(alpha=False)
+                pix.save(image_path)
+            except Exception as e:
+                warnings.append(f"Failed to render slide page {page_num}: {e}")
+                continue
+
+            # Extract text
+            page_text = ""
+            if capabilities["ocr_vlm"]:
+                vlm_text = call_ocr_vlm(image_path)
+                if vlm_text:
+                    page_text = vlm_text
+
+            if not page_text:
+                raw_text = page.get_text()
+                page_text = raw_text.strip() if raw_text else ""
+
+            if not page_text and capabilities["pytesseract"]:
+                try:
+                    from PIL import Image
+                    page_text = pytesseract.image_to_string(Image.open(image_path)).strip()
+                except Exception:
+                    pass
+
+            chunk_id = f"{source_id}_p{page_num:03d}"
+            chunks.append(
+                EvidenceChunk(
+                    chunk_id=chunk_id,
+                    source_id=source_id,
+                    content_hash=content_hash,
+                    modality="visual",
+                    text=page_text or f"Slide Page {page_num}",
+                    start_sec=None,
+                    end_sec=None,
+                    image_path=image_path,
+                    asset_id=f"{source_id}_slide_{page_num:05d}",
+                    page_number=page_num,
+                )
+            )
+    finally:
+        doc.close()
+
+    # Persist to demo corpus DB
+    store = DemoCorpusStore(db_path=demo_corpus_db)
+    source_version = SourceVersion(
+        source_id=source_id,
+        content_hash=content_hash,
+        course_edition="demo",
+        title=resolved_title,
+    )
+    store.upsert_source(source_version)
+    store.insert_chunks(chunks)
+
+    pdf_url = f"/media/video?path={pdf_path}"
+
+    return {
+        "status": "ok",
+        "source_id": source_id,
+        "title": resolved_title,
+        "content_hash": content_hash,
+        "audio_chunks": 0,
+        "visual_chunks": len(chunks),
+        "total_chunks": len(chunks),
+        "pdf_path": pdf_path,
+        "video_path": pdf_path,
+        "video_url": pdf_url,
+        "pdf_url": pdf_url,
+        "pages_rendered": len(chunks),
         "demo_corpus_db": demo_corpus_db,
         "warnings": warnings,
         "capabilities": capabilities,

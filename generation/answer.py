@@ -42,6 +42,66 @@ ABSTAIN_NO_EVIDENCE = ABSTAIN_UNSUPPORTED
 ABSTAIN_VISUAL_MISSING = "I abstain from answering because required visual evidence is missing."
 ABSTAIN_VISUAL_UNSUPPORTED = "I abstain from answering because the visual evidence is unsupported or contradictory."
 
+class OpenAICompatibleLLM:
+    """Callable LLM client wrapping an OpenAI-compatible /chat/completions endpoint (e.g. Gemma4-12B FP8)."""
+
+    def __init__(
+        self,
+        base_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+        timeout: float = 60.0,
+    ):
+        self.api_key = api_key or getattr(CONFIG, "llm_api_key", "")
+        self.base_url = (base_url or getattr(CONFIG, "llm_base_url", "") or "https://api.openai.com/v1").rstrip("/")
+        self.model = model or getattr(CONFIG, "llm_model", "google/gemma-4-12b-it-fp8")
+        self.timeout = timeout
+
+    def complete(self, prompt: str):
+        class _CompletionResponse:
+            def __init__(self, text: str):
+                self.text = text
+
+            def __str__(self):
+                return self.text
+
+        if not self.api_key or not self.api_key.strip():
+            raise RuntimeError("LLM API key not configured. Set LLM_API_KEY or OPENAI_API_KEY.")
+
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.0,
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        endpoint = f"{self.base_url}/chat/completions"
+
+        try:
+            import httpx
+            with httpx.Client(timeout=self.timeout) as client:
+                res = client.post(endpoint, json=payload, headers=headers)
+                res.raise_for_status()
+                data = res.json()
+                content = data["choices"][0]["message"]["content"] or ""
+                return _CompletionResponse(content)
+        except ImportError:
+            import json
+            import urllib.request
+            req = urllib.request.Request(
+                endpoint,
+                data=json.dumps(payload).encode("utf-8"),
+                headers=headers,
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                content = data["choices"][0]["message"]["content"] or ""
+                return _CompletionResponse(content)
+
+
 GLOBAL_QUERY_CACHE = VersionSafeCache()
 
 
@@ -288,6 +348,18 @@ def generate_grounded_answer(
             f"Evidence Context:\n{context_str}\n\n"
             "Answer:"
         )
+
+        if llm is None:
+            # Prefer OpenAI-compatible endpoint (Gemma4-12B FP8, etc.) if configured
+            if getattr(CONFIG, "llm_api_key", ""):
+                try:
+                    llm = OpenAICompatibleLLM(
+                        base_url=getattr(CONFIG, "llm_base_url", ""),
+                        api_key=getattr(CONFIG, "llm_api_key", ""),
+                        model=getattr(CONFIG, "llm_model", "google/gemma-4-12b-it-fp8"),
+                    )
+                except Exception:
+                    llm = None
 
         if llm is None:
             if OpenAI is not None:

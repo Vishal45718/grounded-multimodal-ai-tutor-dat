@@ -44,6 +44,7 @@ from demo.upload_ingest import (
     ALLOWED_SLIDES_EXTENSIONS,
     DemoCorpusStore,
     ingest_uploaded_video,
+    ingest_uploaded_pdf,
     sanitize_filename,
 )
 
@@ -279,6 +280,7 @@ def api_media_video(path: str = Query(..., min_length=1)):
         ".webm": "video/webm",
         ".mov": "video/quicktime",
         ".mkv": "video/x-matroska",
+        ".pdf": "application/pdf",
     }
     media_type = media_type_map.get(ext, "video/mp4")
     return FileResponse(resolved, media_type=media_type)
@@ -297,18 +299,63 @@ class DemoQueryRequest(BaseModel):
 
 @app.post("/api/upload")
 async def api_upload(
-    video: UploadFile = File(...),
+    video: Optional[UploadFile] = File(None),
     transcript: Optional[UploadFile] = File(None),
     slides_pdf: Optional[UploadFile] = File(None),
     title: Optional[str] = Form(None),
 ) -> Dict[str, Any]:
-    """Accept a video upload (+ optional .vtt/.srt/.txt transcript and PDF slides)
+    """Accept a video upload OR a standalone PDF presentation (or both)
     and ingest into the isolated data/demo_corpus.db.
 
     Returns an ingestion report with chunk counts and any capability warnings.
     """
-    # Validate video extension and size
-    video_ext = Path(video.filename or "").suffix.lower()
+    has_video = bool(video and video.filename and video.filename.strip())
+    has_pdf = bool(slides_pdf and slides_pdf.filename and slides_pdf.filename.strip())
+
+    if not has_video and not has_pdf:
+        raise HTTPException(
+            status_code=400,
+            detail="Please provide a video file (.mp4/.webm/.mov/.mkv) or a PDF slides document (.pdf).",
+        )
+
+    os.makedirs(DEMO_UPLOADS_DIR, exist_ok=True)
+
+    # 1. Standalone PDF upload
+    if has_pdf and not has_video:
+        assert slides_pdf is not None and slides_pdf.filename is not None
+        pdf_ext = Path(slides_pdf.filename).suffix.lower()
+        if pdf_ext not in ALLOWED_SLIDES_EXTENSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Slides must be a PDF ({sorted(ALLOWED_SLIDES_EXTENSIONS)}). Got '{pdf_ext}'.",
+            )
+        stem = sanitize_filename(slides_pdf.filename)
+        effective_title = (title or "").strip() or stem.replace("_", " ").title()
+        pdf_dest = os.path.join(DEMO_UPLOADS_DIR, f"{stem}{pdf_ext}")
+
+        pdf_bytes = await slides_pdf.read()
+        if len(pdf_bytes) > MAX_VIDEO_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"PDF exceeds maximum allowed size of {MAX_VIDEO_BYTES // 1024 // 1024} MB.",
+            )
+        with open(pdf_dest, "wb") as f:
+            f.write(pdf_bytes)
+
+        try:
+            report = ingest_uploaded_pdf(
+                pdf_path=pdf_dest,
+                title=effective_title,
+                uploads_dir=DEMO_UPLOADS_DIR,
+                demo_corpus_db=DEMO_CORPUS_DB,
+            )
+            return report
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"PDF ingestion failed: {exc}")
+
+    # 2. Video upload (with optional transcript and slides PDF)
+    assert video is not None and video.filename is not None
+    video_ext = Path(video.filename).suffix.lower()
     if video_ext not in ALLOWED_VIDEO_EXTENSIONS:
         raise HTTPException(
             status_code=400,
@@ -337,7 +384,6 @@ async def api_upload(
     effective_title = (title or "").strip() or stem.replace("_", " ").title()
 
     # Persist to uploads dir
-    os.makedirs(DEMO_UPLOADS_DIR, exist_ok=True)
     video_dest = os.path.join(DEMO_UPLOADS_DIR, f"{stem}{video_ext}")
 
     # Read video and enforce size limit
@@ -805,15 +851,15 @@ _HTML_PAGE = """<!DOCTYPE html>
           <form id="upload-form" onsubmit="submitUpload(event)">
             <div class="form-group">
               <label>Video File (.mp4 / .webm / .mov / .mkv, max 250 MB)</label>
-              <input type="file" id="video-file" accept=".mp4,.webm,.mov,.mkv" required style="color:var(--text);">
+              <input type="file" id="video-file" accept=".mp4,.webm,.mov,.mkv" style="color:var(--text);">
             </div>
             <div class="form-group">
-              <label>Transcript (optional: .vtt / .srt / .txt for speech search)</label>
-              <input type="file" id="transcript-file" accept=".vtt,.srt,.txt" style="color:var(--text);">
-            </div>
-            <div class="form-group">
-              <label>Slides PDF (optional, requires PyMuPDF)</label>
+              <label>OR Slides Document (.pdf — standalone slides or accompanying slides)</label>
               <input type="file" id="slides-file" accept=".pdf" style="color:var(--text);">
+            </div>
+            <div class="form-group">
+              <label>Transcript (optional for video: .vtt / .srt / .txt for speech search)</label>
+              <input type="file" id="transcript-file" accept=".vtt,.srt,.txt" style="color:var(--text);">
             </div>
             <div class="form-group">
               <label>Title (optional — defaults to filename)</label>
@@ -1411,7 +1457,11 @@ _HTML_PAGE = """<!DOCTYPE html>
     async function submitUpload(event) {
       event.preventDefault();
       const videoFile = document.getElementById('video-file').files[0];
-      if (!videoFile) return;
+      const pdfFile = document.getElementById('slides-file').files[0];
+      if (!videoFile && !pdfFile) {
+        alert('Please choose either a Video file or a PDF slides document.');
+        return;
+      }
       const uploadBtn = document.getElementById('upload-btn');
       const progress = document.getElementById('upload-progress');
       const result = document.getElementById('upload-result');
@@ -1420,11 +1470,10 @@ _HTML_PAGE = """<!DOCTYPE html>
       result.style.display = 'none';
 
       const fd = new FormData();
-      fd.append('video', videoFile);
+      if (videoFile) fd.append('video', videoFile);
+      if (pdfFile) fd.append('slides_pdf', pdfFile);
       const tr = document.getElementById('transcript-file').files[0];
       if (tr) fd.append('transcript', tr);
-      const pdf = document.getElementById('slides-file').files[0];
-      if (pdf) fd.append('slides_pdf', pdf);
       const title = document.getElementById('upload-title').value.trim();
       if (title) fd.append('title', title);
 
@@ -1523,7 +1572,7 @@ _HTML_PAGE = """<!DOCTYPE html>
       container.replaceChildren();
       const loading = document.createElement('p');
       loading.style.color = 'var(--warning)';
-      loading.textContent = '⏳ Running offline BM25 retrieval...';
+      loading.textContent = '⏳ Querying Demo Corpus & generating grounded answer...';
       container.appendChild(loading);
       try {
         const res = await fetch('/api/demo/query', {
@@ -1533,17 +1582,111 @@ _HTML_PAGE = """<!DOCTYPE html>
         });
         const data = await res.json();
         container.replaceChildren();
-        const header = document.createElement('div');
-        header.style.cssText = 'margin-bottom:12px; font-size:0.85rem; color:var(--text-muted);';
-        header.textContent = 'Retrieved ' + data.total_retrieved + ' chunks from ' + data.chunk_count + ' total chunks in demo corpus.';
+
+        // 1. Render Grounded Answer Box
+        if (data.answer) {
+          const ansBox = document.createElement('div');
+          ansBox.className = 'card';
+          ansBox.style.cssText = 'border-left: 4px solid var(--accent); margin-bottom: 20px; background: rgba(59, 130, 246, 0.05);';
+
+          const ansHeader = document.createElement('div');
+          ansHeader.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;';
+
+          const ansTitle = document.createElement('h4');
+          ansTitle.style.margin = '0';
+          ansTitle.textContent = '💡 Grounded Tutor Answer';
+
+          const statusBadge = document.createElement('span');
+          if (data.is_abstained) {
+            statusBadge.className = 'badge badge-mock';
+            statusBadge.textContent = '⛔ Abstained';
+          } else if (data.is_qualified) {
+            statusBadge.className = 'badge badge-mock';
+            statusBadge.textContent = '⚠️ Qualified';
+          } else {
+            statusBadge.className = 'badge badge-live';
+            statusBadge.textContent = '✅ Answered';
+          }
+          ansHeader.append(ansTitle, statusBadge);
+
+          const ansContent = document.createElement('div');
+          ansContent.style.cssText = 'white-space:pre-wrap; line-height:1.6; font-size:0.95rem;';
+          ansContent.textContent = data.answer;
+
+          ansBox.append(ansHeader, ansContent);
+          container.appendChild(ansBox);
+        }
+
+        // 2. Render Verified Citations (if any)
+        if (data.citations && data.citations.length > 0) {
+          const citTitle = document.createElement('h4');
+          citTitle.style.cssText = 'margin: 16px 0 8px 0; font-size: 0.95rem; color: var(--text-muted);';
+          citTitle.textContent = '📌 Verified Sources (' + data.citations.length + '):';
+          container.appendChild(citTitle);
+
+          data.citations.forEach(c => {
+            const card = document.createElement('div');
+            card.className = 'evidence-card';
+            card.style.marginBottom = '12px';
+
+            const hd = document.createElement('div');
+            hd.className = 'evidence-header';
+            const lbl = document.createElement('strong');
+            lbl.textContent = (c.citation_label || '') + ' ' + (c.time_bounds_str || '');
+            const badge = document.createElement('span');
+            badge.className = 'badge badge-' + (c.modality === 'visual' ? 'visual' : 'audio');
+            badge.textContent = (c.modality === 'visual' ? '🖼️ Visual' : '🎧 Audio');
+            hd.append(lbl, badge);
+
+            const metaDiv = document.createElement('div');
+            metaDiv.style.cssText = 'font-size:0.8rem; color:var(--text-muted); margin-bottom:6px;';
+            metaDiv.textContent = 'Source: ' + c.source_id + (c.page_number ? ' · Slide Page ' + c.page_number : '');
+
+            const excerpt = document.createElement('div');
+            excerpt.style.cssText = 'font-size:0.85rem; color:#cbd5e1; white-space:pre-wrap;';
+            excerpt.textContent = c.text || '(Visual evidence asset)';
+
+            card.append(hd, metaDiv, excerpt);
+
+            if (c.image_path) {
+              const imgWrap = document.createElement('div');
+              imgWrap.style.marginTop = '8px';
+              const imgEl = document.createElement('img');
+              imgEl.src = '/media?path=' + encodeURIComponent(c.image_path);
+              imgEl.style.cssText = 'max-width:240px; max-height:140px; border-radius:4px; border:1px solid var(--card-border); cursor:pointer; display:block; margin-bottom:6px;';
+              imgEl.title = 'Click to view full slide';
+              imgEl.onclick = () => window.open('/media?path=' + encodeURIComponent(c.image_path), '_blank');
+              imgWrap.appendChild(imgEl);
+              card.appendChild(imgWrap);
+            }
+
+            if (c.start_sec !== null && c.start_sec !== undefined) {
+              const seekBtn = document.createElement('button');
+              seekBtn.className = 'btn btn-secondary';
+              seekBtn.style.cssText = 'padding:4px 10px; font-size:0.8rem; margin-top:6px;';
+              seekBtn.textContent = '▶️ Seek to ' + c.time_bounds_str;
+              seekBtn.onclick = () => seekDemoVideo(c.start_sec);
+              card.appendChild(seekBtn);
+            }
+
+            container.appendChild(card);
+          });
+        }
+
+        // 3. Render Raw Retrieved Chunks (RAG Inspector)
+        const header = document.createElement('h4');
+        header.style.cssText = 'margin: 20px 0 8px 0; font-size: 0.95rem; color: var(--text-muted);';
+        header.textContent = '🔍 Retrieved Chunks (' + data.total_retrieved + ' of ' + data.chunk_count + ' in demo corpus):';
         container.appendChild(header);
+
         if (!data.results || data.results.length === 0) {
           const empty = document.createElement('p');
           empty.style.color = 'var(--text-muted)';
-          empty.textContent = 'No chunks matched. Try uploading a video with a transcript first.';
+          empty.textContent = 'No chunks matched. Try uploading a video or PDF slides first.';
           container.appendChild(empty);
           return;
         }
+
         data.results.forEach(r => {
           const card = document.createElement('div');
           card.className = 'evidence-card';

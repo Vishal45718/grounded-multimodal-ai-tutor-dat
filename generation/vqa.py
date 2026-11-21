@@ -253,6 +253,77 @@ class LlamaIndexVisionAdapter(BaseVisionAdapter):
             return getattr(resp, "text", str(resp))
 
 
+class OpenAICompatibleVisionAdapter(BaseVisionAdapter):
+    """Adapter for OpenAI-compatible VLM endpoints (e.g. zai-org/GLM-4.6V-Flash, vLLM, OpenRouter)."""
+
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        model_name: Optional[str] = None,
+        timeout: float = 60.0,
+    ):
+        self.api_key = api_key or getattr(CONFIG, "vision_api_key", "")
+        self.base_url = (base_url or getattr(CONFIG, "vision_base_url", "") or "https://api.openai.com/v1").rstrip("/")
+        self.model_name = model_name or getattr(CONFIG, "vision_model", "zai-org/GLM-4.6V-Flash")
+        self.timeout = timeout
+
+    def is_available(self) -> bool:
+        return bool(self.api_key and self.api_key.strip())
+
+    def generate(self, prompt: str, images: List[VisualPayload]) -> str:
+        if not self.is_available():
+            raise RuntimeError(
+                "Vision API key not configured. Set VISION_API_KEY or OPENAI_API_KEY."
+            )
+
+        content_parts: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
+        for img_payload in images:
+            content_parts.append({
+                "type": "text",
+                "text": f"Attached Image for {img_payload.label}:",
+            })
+            content_parts.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/jpeg;base64,{img_payload.base64_data}",
+                },
+            })
+
+        payload = {
+            "model": self.model_name,
+            "messages": [{"role": "user", "content": content_parts}],
+            "temperature": 0.0,
+        }
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        endpoint = f"{self.base_url}/chat/completions"
+
+        try:
+            import httpx
+            with httpx.Client(timeout=self.timeout) as client:
+                res = client.post(endpoint, json=payload, headers=headers)
+                res.raise_for_status()
+                data = res.json()
+                return data["choices"][0]["message"]["content"] or ""
+        except ImportError:
+            import json
+            import urllib.request
+            req = urllib.request.Request(
+                endpoint,
+                data=json.dumps(payload).encode("utf-8"),
+                headers=headers,
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                return data["choices"][0]["message"]["content"] or ""
+
+
 def get_vision_adapter(vision_model: Any = None) -> Optional[BaseVisionAdapter]:
     """Resolve or construct the appropriate vision adapter."""
     if vision_model is not None:
@@ -260,6 +331,8 @@ def get_vision_adapter(vision_model: Any = None) -> Optional[BaseVisionAdapter]:
             return vision_model
         if isinstance(vision_model, str):
             backend = vision_model.lower().strip()
+            if backend in ("openai-compatible", "glm", "glm-4.6v-flash", "vlm"):
+                return OpenAICompatibleVisionAdapter()
             if backend == "gemini":
                 return GoogleGenAIVisionAdapter()
             if backend == "openai":
@@ -271,7 +344,16 @@ def get_vision_adapter(vision_model: Any = None) -> Optional[BaseVisionAdapter]:
         if hasattr(vision_model, "complete"):
             return LlamaIndexVisionAdapter(vision_model)
 
+    # Check for OpenAI-compatible VLM first if configured
+    if getattr(CONFIG, "vision_api_key", "") and (
+        getattr(CONFIG, "vision_base_url", "")
+        or getattr(CONFIG, "vision_backend", "").lower() in ("openai-compatible", "glm", "vlm")
+    ):
+        return OpenAICompatibleVisionAdapter()
+
     backend = getattr(CONFIG, "vision_backend", "gemini").lower().strip()
+    if backend in ("openai-compatible", "glm", "vlm"):
+        return OpenAICompatibleVisionAdapter()
     if backend == "gemini":
         return GoogleGenAIVisionAdapter(
             model_name=getattr(CONFIG, "vision_model_name", "gemini-2.5-flash")

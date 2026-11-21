@@ -255,30 +255,56 @@ def detect_backend_status() -> Dict[str, Any]:
     """Inspect the environment to determine actual live vs offline backend availability."""
     has_openai = bool(os.environ.get("OPENAI_API_KEY", "").strip())
     has_gemini = bool(os.environ.get("GEMINI_API_KEY", "").strip())
-    configured_vision = getattr(CONFIG, "vision_backend", "gemini").lower().strip()
+    has_llm_api = bool(getattr(CONFIG, "llm_api_key", "").strip())
+    has_vision_api = bool(getattr(CONFIG, "vision_api_key", "").strip())
+    has_ocr_api = bool(getattr(CONFIG, "ocr_api_key", "").strip() and getattr(CONFIG, "ocr_base_url", "").strip())
 
-    is_live = has_openai or has_gemini
+    is_live = has_openai or has_gemini or has_llm_api or has_vision_api
     mode = "Live" if is_live else "Mock / Offline"
 
-    if configured_vision == "gemini" and not has_gemini:
-        effective_vision_backend = "MockVisionAdapter (GEMINI_API_KEY unset)"
-    elif configured_vision == "openai" and not has_openai:
-        effective_vision_backend = "MockVisionAdapter (OPENAI_API_KEY unset)"
+    if has_llm_api:
+        llm_model_name = getattr(CONFIG, "llm_model", "Gemma4-12B")
+        effective_llm = f"{llm_model_name} (OpenAI-compatible)"
+    elif has_openai:
+        effective_llm = "OpenAI (gpt-4o-mini)"
     else:
-        effective_vision_backend = configured_vision
+        effective_llm = "Offline deterministic fallback"
 
-    effective_llm = "OpenAI (gpt-4o-mini)" if has_openai else "Offline deterministic fallback"
+    if has_vision_api:
+        vision_model_name = getattr(CONFIG, "vision_model", "GLM-4.6V-Flash")
+        effective_vision_backend = f"{vision_model_name} (OpenAI-compatible)"
+    else:
+        configured_vision = getattr(CONFIG, "vision_backend", "gemini").lower().strip()
+        if configured_vision == "gemini" and not has_gemini:
+            effective_vision_backend = "MockVisionAdapter (GEMINI_API_KEY unset)"
+        elif configured_vision == "openai" and not has_openai:
+            effective_vision_backend = "MockVisionAdapter (OPENAI_API_KEY unset)"
+        else:
+            effective_vision_backend = configured_vision
+
+    if has_ocr_api:
+        ocr_model_name = getattr(CONFIG, "ocr_model", "PaddleOCR-VL-1.6")
+        effective_ocr = f"{ocr_model_name} (OpenAI-compatible)"
+    else:
+        effective_ocr = "Local PyMuPDF / Tesseract"
 
     return {
         "mode": mode,
         "is_live": is_live,
         "has_openai": has_openai,
         "has_gemini": has_gemini,
+        "has_llm_api": has_llm_api,
+        "has_vision_api": has_vision_api,
+        "has_ocr_api": has_ocr_api,
+        "llm_model": getattr(CONFIG, "llm_model", "google/gemma-4-12b-it-fp8"),
+        "vision_model": getattr(CONFIG, "vision_model", "zai-org/GLM-4.6V-Flash"),
+        "ocr_model": getattr(CONFIG, "ocr_model", "PaddlePaddle/PaddleOCR-VL-1.6"),
         "vision_backend": effective_vision_backend,
-        "configured_vision_backend": configured_vision,
+        "configured_vision_backend": getattr(CONFIG, "vision_backend", "gemini"),
         "effective_vision_backend": effective_vision_backend,
         "effective_llm": effective_llm,
-        "status_description": f"{mode} Mode — Vision: {effective_vision_backend}, LLM: {effective_llm}",
+        "effective_ocr": effective_ocr,
+        "status_description": f"{mode} Mode — LLM: {effective_llm}, Vision: {effective_vision_backend}, OCR: {effective_ocr}",
     }
 
 
@@ -502,7 +528,7 @@ def purge_learner_memory_items(
 # Video Media Path Validation (Demo Uploads)
 # ---------------------------------------------------------------------------
 
-ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".mkv"}
+ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".mkv", ".pdf"}
 
 
 def validate_video_serve_path(
@@ -591,15 +617,19 @@ def run_demo_corpus_query(
     source_id: Optional[str] = None,
     demo_corpus_db: str = DEMO_CORPUS_DB,
     base_dir: Optional[str] = None,
+    require_visual: bool = False,
+    generate_answer: bool = True,
 ) -> Dict[str, Any]:
-    """Execute an offline BM25 query over the demo corpus and return
-    structured results with retrieval scores for RAG inspection.
+    """Execute hybrid retrieval over the demo corpus, and optionally generate
+    a grounded answer with source citations.
 
     Returns a dict with:
-        query, results (list of chunk dicts with score/rank/text/timestamps),
-        total_retrieved, corpus_db, source_id_filter
+        query, answer, status, is_abstained, is_qualified, citations,
+        results (list of chunk dicts with score/rank/text/timestamps),
+        total_retrieved, corpus_db, demo_corpus_db, source_id_filter, chunk_count
     """
     from demo.upload_ingest import DemoCorpusStore, DemoRetriever
+    from generation.answer import generate_grounded_answer
 
     store = DemoCorpusStore(db_path=demo_corpus_db)
     retriever = DemoRetriever(demo_corpus_db=demo_corpus_db, source_id=source_id)
@@ -626,11 +656,51 @@ def run_demo_corpus_query(
             "text": node.text or node.get_content() if hasattr(node, "get_content") else (node.text or ""),
         })
 
+    answer_text = ""
+    citations_list: List[Dict[str, Any]] = []
+    status = "Answered"
+
+    if generate_answer and nodes:
+        class _DemoRetrieverAdapter:
+            def __init__(self, n):
+                self._nodes = n
+
+            def retrieve(self, q, fusion=True):
+                return self._nodes
+
+        adapter = _DemoRetrieverAdapter(nodes)
+        try:
+            answer_text, raw_citations = generate_grounded_answer(
+                query=query,
+                retriever=adapter,
+                require_visual=require_visual,
+                use_cache=False,
+            )
+            citations_list = [format_citation_card(c, base_dir=base_dir) for c in raw_citations]
+            if answer_text.startswith("I abstain"):
+                status = "Abstained"
+            elif "Answer qualified:" in answer_text or "answer qualified:" in answer_text.lower():
+                status = "Qualified"
+            else:
+                status = "Answered"
+        except Exception as exc:
+            answer_text = f"I abstain from answering due to an error: {exc}"
+            status = "Abstained"
+    elif not nodes:
+        answer_text = "I abstain from answering because no relevant evidence was found in the demo corpus."
+        status = "Abstained"
+
     return {
         "query": query,
+        "answer": answer_text,
+        "status": status,
+        "is_abstained": status == "Abstained",
+        "is_qualified": status == "Qualified",
+        "citations": citations_list,
         "results": results,
         "total_retrieved": len(results),
         "corpus_db": demo_corpus_db,
+        "demo_corpus_db": demo_corpus_db,
         "source_id_filter": source_id,
         "chunk_count": retriever.chunk_count(),
     }

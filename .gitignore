@@ -7,3 +7,4 @@ __pycache__/
 data/demo_learner_memory*
 data/demo_uploads/
 data/demo_corpus*
+.env
