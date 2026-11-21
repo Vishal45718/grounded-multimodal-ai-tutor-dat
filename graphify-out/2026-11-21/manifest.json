@@ -1734,21 +1734,33 @@
     "semantic_hash": ""
   },
   "demo/app.py": {
-    "mtime": 1795250265.3315613,
-    "seen": 1795250564.6105015,
-    "ast_hash": "746eca6207ae31f0b32d64ae1e51c071",
+    "mtime": 1795255228.9843023,
+    "seen": 1795255547.1063888,
+    "ast_hash": "434aa4a535f267987c731030674c72e4",
     "semantic_hash": ""
   },
   "demo/helpers.py": {
-    "mtime": 1795250366.7743921,
-    "seen": 1795250564.610505,
-    "ast_hash": "70af63506072aa7b5313b4d11b7d8a94",
+    "mtime": 1795255456.4935284,
+    "seen": 1795255547.1063924,
+    "ast_hash": "a351a2667ce06b03d81982103dfa4bc0",
     "semantic_hash": ""
   },
   "tests/test_demo_smoke.py": {
     "mtime": 1795250418.1708214,
     "seen": 1795250564.6121337,
     "ast_hash": "fc47078c58c4d36a3a41677291c368f2",
+    "semantic_hash": ""
+  },
+  "demo/upload_ingest.py": {
+    "mtime": 1795255360.1352923,
+    "seen": 1795255547.1063957,
+    "ast_hash": "df545c9b0ebef6a6ff8dcafb5d03ef25",
+    "semantic_hash": ""
+  },
+  "tests/test_demo_upload_rag.py": {
+    "mtime": 1795255486.3637743,
+    "seen": 1795255547.1074188,
+    "ast_hash": "a0f9fe456ed483340051dbaa8dff8b4e",
     "semantic_hash": ""
   }
 }
